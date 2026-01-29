@@ -1,0 +1,315 @@
+package vm
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+
+	"github.com/bsmi021/coop/internal/config"
+	"github.com/bsmi021/coop/internal/logging"
+)
+
+// ColimaBackend implements Backend using Colima.
+type ColimaBackend struct {
+	cfg *config.Config
+}
+
+// NewColimaBackend creates a new Colima backend.
+func NewColimaBackend(cfg *config.Config) *ColimaBackend {
+	return &ColimaBackend{cfg: cfg}
+}
+
+func (c *ColimaBackend) Name() string {
+	return "colima"
+}
+
+func (c *ColimaBackend) Available() bool {
+	return commandExists("colima")
+}
+
+func (c *ColimaBackend) profileName() string {
+	if c.cfg.Settings.VM.Instance != "" {
+		return c.cfg.Settings.VM.Instance
+	}
+	return "incus"
+}
+
+// validateConfig checks for invalid VM configuration combinations.
+func (c *ColimaBackend) validateConfig() error {
+	vm := c.cfg.Settings.VM
+
+	// Validate arch
+	validArch := map[string]bool{"": true, "host": true, "aarch64": true, "x86_64": true}
+	if !validArch[vm.Arch] {
+		return fmt.Errorf("invalid arch %q: must be 'host', 'aarch64', or 'x86_64'", vm.Arch)
+	}
+
+	// Validate vm_type
+	validVMType := map[string]bool{"": true, "vz": true, "qemu": true}
+	if !validVMType[vm.VMType] {
+		return fmt.Errorf("invalid vm_type %q: must be 'vz' or 'qemu'", vm.VMType)
+	}
+
+	// VZ is only available on macOS
+	if vm.VMType == "vz" && runtime.GOOS != "darwin" {
+		return fmt.Errorf("vm_type 'vz' is only available on macOS")
+	}
+
+	// Rosetta requires VZ and aarch64 host
+	if vm.Rosetta {
+		if vm.VMType == "qemu" {
+			return fmt.Errorf("rosetta requires vm_type 'vz', not 'qemu'")
+		}
+		if runtime.GOARCH != "arm64" {
+			return fmt.Errorf("rosetta requires Apple Silicon (aarch64 host)")
+		}
+		// Rosetta emulates x86_64, so arch must be host/aarch64 (Rosetta runs inside the aarch64 VM)
+		if vm.Arch == "x86_64" {
+			return fmt.Errorf("rosetta runs inside an aarch64 VM to emulate x86_64; set arch='host' or 'aarch64', not 'x86_64'")
+		}
+	}
+
+	// Nested virtualization requires VZ
+	if vm.NestedVirtualization && vm.VMType == "qemu" {
+		return fmt.Errorf("nested_virtualization requires vm_type 'vz', not 'qemu'")
+	}
+
+	// VZ on non-native arch requires QEMU
+	if vm.VMType == "vz" {
+		hostArch := runtime.GOARCH
+		if hostArch == "arm64" {
+			hostArch = "aarch64"
+		} else if hostArch == "amd64" {
+			hostArch = "x86_64"
+		}
+		if vm.Arch != "" && vm.Arch != "host" && vm.Arch != hostArch {
+			return fmt.Errorf("vm_type 'vz' only supports native architecture; for %s emulation use vm_type 'qemu'", vm.Arch)
+		}
+	}
+
+	return nil
+}
+
+// colimaStatus represents colima list JSON output
+type colimaStatus struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Arch    string `json:"arch"`
+	CPUs    int    `json:"cpus"`
+	Memory  int64  `json:"memory"` // bytes
+	Disk    int64  `json:"disk"`   // bytes
+	Runtime string `json:"runtime"`
+}
+
+func (c *ColimaBackend) Status() (*Status, error) {
+	log := logging.Get()
+	profile := c.profileName()
+
+	cmd := exec.Command("colima", "list", "--json")
+	log.Cmd("colima", []string{"list", "--json"})
+
+	output, err := cmd.Output()
+	if err != nil {
+		log.CmdOutput("colima", output, err)
+		return &Status{Name: profile, State: StateMissing}, nil
+	}
+	log.CmdOutput("colima", output, nil)
+
+	// Colima outputs one JSON object per line
+	decoder := json.NewDecoder(bytes.NewReader(output))
+	for decoder.More() {
+		var st colimaStatus
+		if err := decoder.Decode(&st); err != nil {
+			continue
+		}
+		if st.Name == profile {
+			state := StateStopped
+			if strings.ToLower(st.Status) == "running" {
+				state = StateRunning
+			}
+
+			return &Status{
+				Name:     st.Name,
+				State:    state,
+				CPUs:     st.CPUs,
+				MemoryGB: int(st.Memory / (1024 * 1024 * 1024)),
+				DiskGB:   int(st.Disk / (1024 * 1024 * 1024)),
+				Arch:     st.Arch,
+				Runtime:  st.Runtime,
+			}, nil
+		}
+	}
+
+	return &Status{Name: profile, State: StateMissing}, nil
+}
+
+func (c *ColimaBackend) Start() error {
+	log := logging.Get()
+	profile := c.profileName()
+	vm := c.cfg.Settings.VM
+
+	status, err := c.Status()
+	if err != nil {
+		return err
+	}
+
+	if status.State == StateRunning {
+		return nil
+	}
+
+	// Validate configuration before creating new VM
+	if status.State == StateMissing {
+		if err := c.validateConfig(); err != nil {
+			return fmt.Errorf("invalid VM configuration: %w", err)
+		}
+	}
+
+	args := []string{"start", profile, "--runtime", "incus"}
+
+	// Add resource args for new instance
+	if status.State == StateMissing {
+		// Architecture (aarch64, x86_64, or host)
+		if vm.Arch != "" {
+			args = append(args, "--arch", vm.Arch)
+		}
+
+		if vm.CPUs > 0 {
+			args = append(args, "--cpu", fmt.Sprintf("%d", vm.CPUs))
+		}
+		if vm.MemoryGB > 0 {
+			args = append(args, "--memory", fmt.Sprintf("%d", vm.MemoryGB))
+		}
+		if vm.DiskGB > 0 {
+			args = append(args, "--disk", fmt.Sprintf("%d", vm.DiskGB))
+		}
+
+		// VM type (vz or qemu)
+		if vm.VMType != "" {
+			args = append(args, "--vm-type", vm.VMType)
+		}
+
+		// VZ-specific options (only valid with vz or when vz is default)
+		if vm.VMType == "vz" || vm.VMType == "" {
+			if vm.Rosetta {
+				args = append(args, "--vz-rosetta")
+			}
+			if vm.NestedVirtualization {
+				args = append(args, "--nested-virtualization")
+			}
+		}
+
+		// DNS servers
+		for _, dns := range vm.DNS {
+			args = append(args, "--dns", dns)
+		}
+	}
+
+	log.Cmd("colima", args)
+	cmd := exec.Command("colima", args...)
+	cmd.Stdout = log.MultiWriter(os.Stdout)
+	cmd.Stderr = log.MultiWriter(os.Stderr)
+
+	// Handle storage pool recovery prompt
+	// Colima/Incus asks: "existing Incus data found, would you like to recover the storage pool(s)? [y/N]"
+	autoRecover := vm.StorageAutoRecover != nil && *vm.StorageAutoRecover
+	if autoRecover {
+		cmd.Stdin = strings.NewReader("y\n")
+	} else {
+		cmd.Stdin = strings.NewReader("n\n")
+	}
+
+	err = cmd.Run()
+	log.CmdEnd("colima", err)
+	return err
+}
+
+func (c *ColimaBackend) Stop() error {
+	log := logging.Get()
+	profile := c.profileName()
+
+	args := []string{"stop", profile}
+	log.Cmd("colima", args)
+
+	cmd := exec.Command("colima", args...)
+	cmd.Stdout = log.MultiWriter(os.Stdout)
+	cmd.Stderr = log.MultiWriter(os.Stderr)
+
+	err := cmd.Run()
+	log.CmdEnd("colima", err)
+	return err
+}
+
+func (c *ColimaBackend) Delete() error {
+	log := logging.Get()
+	profile := c.profileName()
+
+	args := []string{"delete", profile, "--force"}
+	log.Cmd("colima", args)
+
+	cmd := exec.Command("colima", args...)
+	cmd.Stdout = log.MultiWriter(os.Stdout)
+	cmd.Stderr = log.MultiWriter(os.Stderr)
+
+	err := cmd.Run()
+	log.CmdEnd("colima", err)
+	return err
+}
+
+func (c *ColimaBackend) Shell() error {
+	log := logging.Get()
+	profile := c.profileName()
+
+	// Colima uses: colima ssh <profile>
+	args := []string{"ssh", profile}
+	log.Cmd("colima", args)
+
+	cmd := exec.Command("colima", args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Run()
+	log.CmdEnd("colima", err)
+	return err
+}
+
+func (c *ColimaBackend) Exec(command []string) ([]byte, error) {
+	log := logging.Get()
+	profile := c.profileName()
+
+	// colima ssh <profile> -- <command>
+	args := append([]string{"ssh", profile, "--"}, command...)
+	log.Cmd("colima", args)
+
+	cmd := exec.Command("colima", args...)
+	output, err := cmd.Output()
+	log.CmdOutput("colima", output, err)
+	return output, err
+}
+
+func (c *ColimaBackend) GetIncusSocket() (string, error) {
+	// Check explicit config first
+	if c.cfg.Settings.IncusSocket != "" {
+		return c.cfg.Settings.IncusSocket, nil
+	}
+
+	profile := c.profileName()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	// Colima stores socket at ~/.colima/<profile>/incus.sock
+	socketPath := filepath.Join(home, ".colima", profile, "incus.sock")
+
+	if _, err := os.Stat(socketPath); err != nil {
+		return "", fmt.Errorf("incus socket not found at %s (is Colima running?): %w", socketPath, err)
+	}
+
+	return "unix://" + socketPath, nil
+}

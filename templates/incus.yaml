@@ -1,0 +1,115 @@
+# Lima template for running Incus (container manager)
+# Based on Debian for better Incus support
+
+vmType: vz
+arch: default
+
+images:
+  - location: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
+    arch: "x86_64"
+  - location: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-arm64.qcow2"
+    arch: "aarch64"
+
+cpus: 4
+memory: "8GiB"
+disk: "100GiB"
+
+mounts:
+  - location: "~"
+    writable: false
+  - location: "/tmp/lima"
+    writable: true
+
+ssh:
+  localPort: 0
+  loadDotSSHPubKeys: false
+  forwardAgent: false
+
+containerd:
+  system: false
+  user: false
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+
+      # Install Incus from Zabbly repo (official Incus packages)
+      apt-get update
+      apt-get install -y curl gpg
+
+      # Add Zabbly GPG key
+      mkdir -p /etc/apt/keyrings/
+      curl -fsSL https://pkgs.zabbly.com/key.asc | gpg --dearmor -o /etc/apt/keyrings/zabbly.gpg
+
+      # Add Zabbly repo
+      cat > /etc/apt/sources.list.d/zabbly-incus-stable.sources <<EOF
+      Enabled: yes
+      Types: deb
+      URIs: https://pkgs.zabbly.com/incus/stable
+      Suites: $(. /etc/os-release && echo ${VERSION_CODENAME})
+      Components: main
+      Architectures: $(dpkg --print-architecture)
+      Signed-By: /etc/apt/keyrings/zabbly.gpg
+      EOF
+
+      apt-get update
+      apt-get install -y incus
+
+      # Initialize Incus with minimal preseed
+      cat <<PRESEED | incus admin init --preseed
+      config: {}
+      networks:
+        - config:
+            ipv4.address: 10.0.100.1/24
+            ipv4.nat: "true"
+          description: ""
+          name: incusbr0
+          type: bridge
+      storage_pools:
+        - config:
+            size: 50GiB
+          description: ""
+          name: default
+          driver: btrfs
+      profiles:
+        - config: {}
+          description: ""
+          devices:
+            eth0:
+              name: eth0
+              network: incusbr0
+              type: nic
+            root:
+              path: /
+              pool: default
+              type: disk
+          name: default
+      projects: []
+      cluster: null
+      PRESEED
+
+      # Add the lima user to incus-admin group
+      usermod -aG incus-admin $(getent passwd 1000 | cut -d: -f1)
+
+      echo "Incus installation complete!"
+
+  - mode: user
+    script: |
+      #!/bin/bash
+      # Verify Incus is working
+      incus list
+
+portForwards:
+  - guestSocket: "/var/lib/incus/unix.socket"
+    hostSocket: "{{.Dir}}/sock/incus.sock"
+
+message: |
+  Incus is installed and running.
+  
+  To use from the host:
+    export INCUS_SOCKET="unix://{{.Dir}}/sock/incus.sock"
+    incus list
+  
+  Or use coop which handles this automatically.
