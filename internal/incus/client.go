@@ -294,7 +294,7 @@ func (c *Client) ExecCommandWithOutput(name string, command []string) (string, e
 		Command:      command,
 		WaitForWS:    true,
 		Interactive:  false,
-		RecordOutput: true,
+		RecordOutput: false,  // Use websocket streaming instead
 	}
 
 	var stdout, stderr bytes.Buffer
