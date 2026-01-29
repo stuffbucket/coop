@@ -17,6 +17,18 @@ brew install colima incus
 colima start --profile incus --vm-type vz --vz-rosetta --network-address
 ```
 
+The `--network-address` flag assigns a routable IP to the VM. After starting, add a route so your Mac can reach containers on the Incus bridge network:
+
+```bash
+# Get the VM's IP address
+VM_IP=$(colima list -p incus -j | jq -r '.address')
+
+# Add route to container network (persists until reboot)
+sudo route add -net 192.100.0.0/24 $VM_IP
+```
+
+To make routing persistent across reboots, add a LaunchDaemon or re-run after `colima start`.
+
 Build and initialize:
 
 ```bash
