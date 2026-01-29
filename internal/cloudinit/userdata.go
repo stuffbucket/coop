@@ -93,10 +93,20 @@ write_files:
     permissions: '0644'
 
 runcmd:
+  # Ensure agent user exists with correct shell (handles UID conflicts)
+  - id agent >/dev/null 2>&1 || useradd -m -s /bin/bash -u 1000 -U agent
+  - usermod -s /bin/bash agent
+  - usermod -aG sudo,adm agent || true
+  - 'echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent'
+  
   # Setup agent home directories
   - mkdir -p /home/agent/.bashrc.d /home/agent/.local/bin /home/agent/.config
   - mkdir -p /home/agent/.ssh /home/agent/.vscode-server /home/agent/workspace /home/agent/go/bin
   - chmod 700 /home/agent/.ssh
+{{- if .SSHPubKey }}
+  - 'echo "{{.SSHPubKey}}" > /home/agent/.ssh/authorized_keys'
+  - chmod 600 /home/agent/.ssh/authorized_keys
+{{- end }}
   - 'grep -q "bashrc.d" /home/agent/.bashrc || echo "for f in ~/.bashrc.d/*.sh; do [ -r \"$f\" ] && . \"$f\"; done" >> /home/agent/.bashrc'
   
   # Optional upgrades (non-fatal)
