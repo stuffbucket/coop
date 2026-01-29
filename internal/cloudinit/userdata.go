@@ -76,8 +76,7 @@ write_files:
     content: |
       export GOROOT=/usr/local/go
       export GOPATH=$HOME/go
-      export PATH=$PATH:$GOROOT/bin:$GOPATH/bin
-      export PATH="$HOME/.local/bin:$PATH"
+      export PATH=$HOME/.local/bin:$PATH:$GOROOT/bin:$GOPATH/bin
       export EDITOR=vim
     permissions: '0644'
 
@@ -109,7 +108,7 @@ runcmd:
 {{- end }}
   - 'grep -q "bashrc.d" /home/agent/.bashrc || echo "for f in ~/.bashrc.d/*.sh; do [ -r \"$f\" ] && . \"$f\"; done" >> /home/agent/.bashrc'
   
-  # Optional upgrades (non-fatal)
+  # Optional upgrades (non-fatal) - user version in ~/.local/bin takes precedence
   - su - agent -c 'claude upgrade' || true
   
   # Firewall setup
