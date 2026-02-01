@@ -80,17 +80,26 @@ go-upgrade:
 
 # Run CI checks via act (GitHub Actions local runner)
 # Install: brew install act
-# First run will prompt for image size (medium is sufficient for Go)
+# Supports git worktrees by mounting parent .git directory
+
+# Detect git worktree and get parent .git path for container mount
+ACT_WORKTREE_OPTS := $(shell \
+	if [ -f .git ]; then \
+		gitdir=$$(sed -n 's/^gitdir: //p' .git); \
+		parent_git=$$(echo "$$gitdir" | sed 's|/worktrees/.*||'); \
+		echo "--container-options \"-v $$parent_git:$$parent_git:ro\""; \
+	fi)
+
 act:
 	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
-	act push
+	act push $(ACT_WORKTREE_OPTS)
 
 # Run only the build job
 act-build:
 	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
-	act push -j build
+	act push -j build $(ACT_WORKTREE_OPTS)
 
 # Run only the lint job
 act-lint:
 	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
-	act push -j lint
+	act push -j lint $(ACT_WORKTREE_OPTS)
