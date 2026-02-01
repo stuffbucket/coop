@@ -37,7 +37,7 @@ var (
 	logoStyle5 = lipgloss.NewStyle().Foreground(lipgloss.Color("183")) // lavender
 
 	// Help styles
-	cmdStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true) // magenta
+	cmdStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true) // magenta
 	envStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))            // green
 	exampleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))            // light gray
 
