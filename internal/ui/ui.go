@@ -454,7 +454,7 @@ func Notify(title, subtitle, message string) {
 		message, title, subtitle)
 
 	// Fire and forget - don't block on notification delivery
-	exec.Command("osascript", "-e", script).Start()
+	_ = exec.Command("osascript", "-e", script).Start()
 }
 
 // NotifyWithSound sends a macOS notification with a sound.
@@ -466,7 +466,7 @@ func NotifyWithSound(title, subtitle, message, sound string) {
 	script := fmt.Sprintf(`display notification %q with title %q subtitle %q sound name %q`,
 		message, title, subtitle, sound)
 
-	exec.Command("osascript", "-e", script).Start()
+	_ = exec.Command("osascript", "-e", script).Start()
 }
 
 // TTYPrint writes directly to /dev/tty, bypassing stdout/stderr redirection.

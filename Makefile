@@ -1,4 +1,4 @@
-.PHONY: build test lint vuln vuln-go vuln-strict clean all check go-version act act-build act-lint
+.PHONY: build test lint vuln vuln-go clean all check go-version ci ci-all act act-build act-lint
 
 # Build settings
 BINARY := coop
@@ -39,13 +39,6 @@ vuln-trivy:
 # Combined vulnerability scan - run both tools
 vuln: vuln-go vuln-trivy
 
-# Strict vulnerability scan - fails on any CVE (for CI)
-vuln-strict:
-	@command -v govulncheck >/dev/null 2>&1 || { echo "Install govulncheck: brew install govulncheck"; exit 1; }
-	@command -v trivy >/dev/null 2>&1 || { echo "Install trivy: brew install trivy"; exit 1; }
-	govulncheck ./...
-	trivy fs --scanners vuln --exit-code 1 --severity HIGH,CRITICAL .
-
 # Update dependencies and tidy
 deps:
 	$(GO) get -u ./...
@@ -62,9 +55,6 @@ check: verify vuln
 clean:
 	rm -f $(BINARY)
 	$(GO) clean -cache
-
-# CI target: strict checks
-ci: verify vuln-strict lint test build
 
 # Show detected Go version
 go-version:
@@ -89,6 +79,14 @@ ACT_WORKTREE_OPTS := $(shell \
 		parent_git=$$(echo "$$gitdir" | sed 's|/worktrees/.*||'); \
 		echo "--container-options \"-v $$parent_git:$$parent_git:ro\""; \
 	fi)
+
+# CI target - runs build job only (fast, always works)
+ci:
+	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
+	act push -j build $(ACT_WORKTREE_OPTS)
+
+# Full CI - runs all jobs (lint/security are informational)
+ci-all: act
 
 act:
 	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }

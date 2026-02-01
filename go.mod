@@ -1,6 +1,6 @@
 module github.com/bsmi021/coop
 
-go 1.25.6
+go 1.24.12
 
 require (
 	github.com/charmbracelet/huh v0.8.0
