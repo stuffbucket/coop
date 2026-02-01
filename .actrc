@@ -10,3 +10,6 @@
 
 # Disable Docker socket mounting (required for Colima compatibility)
 --container-daemon-socket=-
+
+# Bind mount instead of copy (preserves git worktree references)
+--bind
