@@ -515,7 +515,6 @@ func (m *Manager) List() ([]ContainerInfo, error) {
 	for _, c := range containers {
 		info := ContainerInfo{
 			Name:      c.Name,
-			FullName:  c.Name,
 			Status:    c.Status,
 			CreatedAt: c.CreatedAt,
 			CPUs:      c.Config["limits.cpu"],
@@ -543,7 +542,6 @@ func (m *Manager) List() ([]ContainerInfo, error) {
 // ContainerInfo holds display information about a container.
 type ContainerInfo struct {
 	Name      string
-	FullName  string
 	Status    string
 	IP        string
 	CPUs      string
@@ -561,7 +559,6 @@ func (m *Manager) Status(name string) (*ContainerStatus, error) {
 
 	status := &ContainerStatus{
 		Name:      name,
-		FullName:  name,
 		Status:    container.Status,
 		CreatedAt: container.CreatedAt,
 		Config:    container.Config,
@@ -579,7 +576,6 @@ func (m *Manager) Status(name string) (*ContainerStatus, error) {
 // ContainerStatus holds detailed status information.
 type ContainerStatus struct {
 	Name      string
-	FullName  string
 	Status    string
 	IP        string
 	CreatedAt time.Time
