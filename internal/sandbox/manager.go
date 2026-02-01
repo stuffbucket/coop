@@ -24,6 +24,16 @@ const (
 	FallbackImage = "ubuntu/22.04/cloud"
 	// AgentProfile is the Incus profile for agent containers.
 	AgentProfile = "agent-sandbox"
+
+	// CloudInitTimeout is max time to wait for cloud-init to complete.
+	CloudInitTimeout = 10 * time.Minute
+	// CloudInitPollInterval is how often to check cloud-init status.
+	CloudInitPollInterval = 3 * time.Second
+
+	// DefaultProcessLimit protects against fork bombs in containers.
+	DefaultProcessLimit = "500"
+	// AgentUID is the UID for the agent user inside containers.
+	AgentUID = 1000
 )
 
 // Manager handles container lifecycle operations.
@@ -113,8 +123,8 @@ func (m *Manager) Create(cfg ContainerConfig) error {
 		"user.user-data":   userData,
 		"limits.cpu":       fmt.Sprintf("%d", cfg.CPUs),
 		"limits.memory":    fmt.Sprintf("%dMiB", cfg.MemoryMB),
-		"limits.processes": "500",                                     // Fork bomb protection
-		"raw.idmap":        fmt.Sprintf("both %d 1000", os.Getuid()), // Map host UID to container agent (1000)
+		"limits.processes": DefaultProcessLimit,
+		"raw.idmap":        fmt.Sprintf("both %d %d", os.Getuid(), AgentUID),
 	}
 
 	// Resolve image: prefer base image, fall back to remote if missing
@@ -266,9 +276,8 @@ func (m *Manager) ensureAgentProfile(cfg ContainerConfig) error {
 }
 
 func (m *Manager) waitForCloudInit(name string, verbose bool) error {
-	// Poll for cloud-init completion (max 10 minutes)
-	timeout := time.After(10 * time.Minute)
-	ticker := time.NewTicker(3 * time.Second)
+	timeout := time.After(CloudInitTimeout)
+	ticker := time.NewTicker(CloudInitPollInterval)
 	defer ticker.Stop()
 
 	lastStatus := ""
@@ -770,24 +779,24 @@ var sipProtectedPaths = []string{
 
 // sensitiveHomeDirs are user directories containing credentials, keys, or sensitive config.
 var sensitiveHomeDirs = []string{
-	"Library",                  // Keychains, app data, cookies
-	"Library/Keychains",        // macOS keychain files
-	"Library/Cookies",          // Browser cookies
+	"Library",                                // Keychains, app data, cookies
+	"Library/Keychains",                      // macOS keychain files
+	"Library/Cookies",                        // Browser cookies
 	"Library/Application Support/MobileSync", // iOS backups
-	".ssh",                     // SSH keys
-	".gnupg",                   // GPG keys
-	".aws",                     // AWS credentials
-	".azure",                   // Azure credentials
-	".config/gcloud",           // GCP credentials
-	".kube",                    // Kubernetes config
-	".docker",                  // Docker config and creds
-	".npmrc",                   // npm tokens (file)
-	".netrc",                   // Generic credential file
-	".gitconfig",               // May contain credentials
-	".git-credentials",         // Git credential storage
-	".config/gh",               // GitHub CLI tokens
-	".anthropic",               // Anthropic API keys
-	".openai",                  // OpenAI API keys
+	".ssh",                                   // SSH keys
+	".gnupg",                                 // GPG keys
+	".aws",                                   // AWS credentials
+	".azure",                                 // Azure credentials
+	".config/gcloud",                         // GCP credentials
+	".kube",                                  // Kubernetes config
+	".docker",                                // Docker config and creds
+	".npmrc",                                 // npm tokens (file)
+	".netrc",                                 // Generic credential file
+	".gitconfig",                             // May contain credentials
+	".git-credentials",                       // Git credential storage
+	".config/gh",                             // GitHub CLI tokens
+	".anthropic",                             // Anthropic API keys
+	".openai",                                // OpenAI API keys
 }
 
 // expandPath expands ~ and ~user to absolute paths.
@@ -912,9 +921,9 @@ func (m *Manager) ListMounts(containerName string) ([]MountInfo, error) {
 
 // ContainerMounts holds mounts for a single container along with its status.
 type ContainerMounts struct {
-	Name    string
-	Status  string
-	Mounts  []MountInfo
+	Name   string
+	Status string
+	Mounts []MountInfo
 }
 
 // ListAllMounts returns mounts for all containers.
