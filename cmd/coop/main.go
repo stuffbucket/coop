@@ -80,7 +80,7 @@ func initLogging() {
 	if err != nil {
 		// Fallback to default if config load fails
 		dirs := config.GetDirectories()
-		logging.Init(logging.DefaultConfig(dirs.Logs))
+		_ = logging.Init(logging.DefaultConfig(dirs.Logs))
 		return
 	}
 
@@ -188,7 +188,7 @@ func createCmd(args []string) {
 	workDir := fs.String("workdir", "", "Host directory to mount as workspace")
 	verbose := fs.Bool("verbose", false, "Stream cloud-init logs during setup")
 
-	fs.Parse(args)
+	_ = fs.Parse(args) // ExitOnError mode handles errors
 
 	// Auto-generate name if not provided
 	var name string
@@ -271,7 +271,7 @@ func startCmd(args []string) {
 func stopCmd(args []string) {
 	fs := flag.NewFlagSet("stop", flag.ExitOnError)
 	force := fs.Bool("force", false, "Force stop")
-	fs.Parse(args)
+	_ = fs.Parse(args) // ExitOnError mode handles errors
 
 	if fs.NArg() < 1 {
 		ui.Error("container name required")
@@ -348,7 +348,7 @@ func logsCmd(args []string) {
 	fs := flag.NewFlagSet("logs", flag.ExitOnError)
 	follow := fs.Bool("f", false, "Follow log output")
 	lines := fs.Int("n", 50, "Number of lines to show")
-	fs.Parse(args)
+	_ = fs.Parse(args) // ExitOnError mode handles errors
 
 	if fs.NArg() < 1 {
 		ui.Error("container name required")
@@ -373,7 +373,7 @@ func logsCmd(args []string) {
 func deleteCmd(args []string) {
 	fs := flag.NewFlagSet("delete", flag.ExitOnError)
 	force := fs.Bool("force", false, "Force stop running container")
-	fs.Parse(args)
+	_ = fs.Parse(args) // ExitOnError mode handles errors
 
 	if fs.NArg() < 1 {
 		ui.Error("container name required")
@@ -838,7 +838,7 @@ func mountAddCmd(args []string) {
 	path := fs.String("path", "", "Mount path inside container (default: /home/agent/<basename>)")
 	readonly := fs.Bool("readonly", false, "Mount read-only (container cannot write)")
 	force := fs.Bool("force", false, "Authorize mounting protected directories")
-	fs.Parse(args)
+	_ = fs.Parse(args) // ExitOnError mode handles errors
 
 	if fs.NArg() < 2 {
 		ui.Error("container name and source path required")
@@ -912,7 +912,7 @@ func mountAddCmd(args []string) {
 			}
 
 			var input string
-			fmt.Fscanln(tty, &input)
+			_, _ = fmt.Fscanln(tty, &input)
 			input = strings.TrimSpace(input)
 
 			if sandbox.ValidateAuthCode(input) {
