@@ -2,12 +2,14 @@
 package sshkeys
 
 import (
+	"bufio"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/bsmi021/coop/internal/config"
 	"golang.org/x/crypto/ssh"
@@ -126,18 +128,18 @@ func SSHArgs(user, host string) []string {
 }
 
 // WriteSSHConfig writes/updates the SSH config for a container.
+// If an entry for the container already exists, it is replaced.
 func WriteSSHConfig(containerName, ip string) error {
 	paths := GetPaths()
 
-	// Read existing config
-	var existingConfig []byte
+	// Read existing config and filter out old entry for this container
+	var filteredLines []string
 	if data, err := os.ReadFile(paths.ConfigFile); err == nil {
-		existingConfig = data
+		filteredLines = removeHostBlock(string(data), containerName)
 	}
 
-	// Build host entry
-	hostEntry := fmt.Sprintf(`
-# Coop agent container: %s
+	// Build new host entry
+	hostEntry := fmt.Sprintf(`# Coop agent container: %s
 Host %s
     HostName %s
     User agent
@@ -146,14 +148,73 @@ Host %s
     UserKnownHostsFile /dev/null
 `, containerName, containerName, ip, paths.PrivateKey)
 
-	// Simple append (could be smarter about updates)
-	newConfig := string(existingConfig) + hostEntry
+	// Combine filtered config with new entry
+	var newConfig string
+	if len(filteredLines) > 0 {
+		newConfig = strings.Join(filteredLines, "\n") + "\n\n" + hostEntry
+	} else {
+		newConfig = hostEntry
+	}
 
 	if err := os.WriteFile(paths.ConfigFile, []byte(newConfig), 0600); err != nil {
 		return fmt.Errorf("failed to write ssh config: %w", err)
 	}
 
 	return nil
+}
+
+// removeHostBlock removes a Host block and its preceding comment from the config.
+// Returns the remaining lines.
+func removeHostBlock(config, hostName string) []string {
+	var result []string
+	scanner := bufio.NewScanner(strings.NewReader(config))
+	skipUntilNextHost := false
+	var pendingComment string
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Check if this is the start of the host block we want to remove
+		if strings.HasPrefix(trimmed, "Host ") {
+			fields := strings.Fields(trimmed)
+			if len(fields) >= 2 && fields[1] == hostName {
+				// Skip this host block and any pending comment
+				skipUntilNextHost = true
+				pendingComment = ""
+				continue
+			}
+			// Different host, stop skipping
+			skipUntilNextHost = false
+		}
+
+		if skipUntilNextHost {
+			continue
+		}
+
+		// Track comments that might belong to a host block
+		if strings.HasPrefix(trimmed, "# Coop agent container:") {
+			pendingComment = line
+			continue
+		}
+
+		// If we have a pending comment and this isn't a Host line, keep the comment
+		if pendingComment != "" {
+			if !strings.HasPrefix(trimmed, "Host ") {
+				result = append(result, pendingComment)
+			}
+			pendingComment = ""
+		}
+
+		result = append(result, line)
+	}
+
+	// Trim trailing empty lines
+	for len(result) > 0 && strings.TrimSpace(result[len(result)-1]) == "" {
+		result = result[:len(result)-1]
+	}
+
+	return result
 }
 
 // PrintIncludeHint prints instructions for including coop SSH config.
