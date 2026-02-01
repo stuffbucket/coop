@@ -1,4 +1,4 @@
-.PHONY: build test lint vuln vuln-go vuln-strict clean all check go-version
+.PHONY: build test lint vuln vuln-go vuln-strict clean all check go-version act act-build act-lint
 
 # Build settings
 BINARY := coop
@@ -77,3 +77,20 @@ go-upgrade:
 	@sed -i '' 's/^go [0-9][0-9.]*$$/go $(GO_VERSION)/' go.mod
 	$(GO) mod tidy
 	@echo "Done. Run 'make test' to verify."
+
+# Run CI checks via act (GitHub Actions local runner)
+# Install: brew install act
+# First run will prompt for image size (medium is sufficient for Go)
+act:
+	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
+	act push
+
+# Run only the build job
+act-build:
+	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
+	act push -j build
+
+# Run only the lint job
+act-lint:
+	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
+	act push -j lint

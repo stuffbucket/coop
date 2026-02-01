@@ -1,0 +1,12 @@
+# act configuration - run GitHub Actions locally
+# See: https://nektosact.com/
+
+# Use medium images (sufficient for Go, Node, etc.)
+-P ubuntu-latest=catthehacker/ubuntu:act-latest
+-P ubuntu-22.04=catthehacker/ubuntu:act-22.04
+
+# Don't pull images if they exist locally
+--pull=false
+
+# Disable Docker socket mounting (required for Colima compatibility)
+--container-daemon-socket=-
