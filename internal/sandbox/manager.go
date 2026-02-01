@@ -2,6 +2,7 @@
 package sandbox
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -35,6 +36,14 @@ const (
 	// AgentUID is the UID for the agent user inside containers.
 	AgentUID = 1000
 )
+
+// ErrContainerNotFound is returned when a container doesn't exist.
+var ErrContainerNotFound = errors.New("container not found")
+
+// containerNotFound returns a wrapped error for a missing container.
+func containerNotFound(name string) error {
+	return fmt.Errorf("%w: %s", ErrContainerNotFound, name)
+}
 
 // Manager handles container lifecycle operations.
 type Manager struct {
@@ -393,7 +402,7 @@ func (m *Manager) getCloudInitStatus(name string) (string, error) {
 func (m *Manager) Start(name string) error {
 	container, err := m.client.GetContainer(name)
 	if err != nil {
-		return fmt.Errorf("container %s not found", name)
+		return containerNotFound(name)
 	}
 
 	if container.Status == "Running" {
@@ -411,7 +420,7 @@ func (m *Manager) Start(name string) error {
 func (m *Manager) Stop(name string, force bool) error {
 	container, err := m.client.GetContainer(name)
 	if err != nil {
-		return fmt.Errorf("container %s not found", name)
+		return containerNotFound(name)
 	}
 
 	if container.Status != "Running" {
@@ -429,7 +438,7 @@ func (m *Manager) Stop(name string, force bool) error {
 func (m *Manager) Lock(name string) error {
 	container, err := m.client.GetContainer(name)
 	if err != nil {
-		return fmt.Errorf("container %s not found", name)
+		return containerNotFound(name)
 	}
 
 	if container.Status != "Running" {
@@ -447,7 +456,7 @@ func (m *Manager) Lock(name string) error {
 func (m *Manager) Unlock(name string) error {
 	container, err := m.client.GetContainer(name)
 	if err != nil {
-		return fmt.Errorf("container %s not found", name)
+		return containerNotFound(name)
 	}
 
 	if container.Status != "Frozen" {
@@ -465,7 +474,7 @@ func (m *Manager) Unlock(name string) error {
 func (m *Manager) Logs(name string, follow bool, lines int) error {
 	container, err := m.client.GetContainer(name)
 	if err != nil {
-		return fmt.Errorf("container %s not found", name)
+		return containerNotFound(name)
 	}
 
 	if container.Status != "Running" {
@@ -492,7 +501,7 @@ func (m *Manager) Delete(name string, force bool) error {
 	// Check if container exists
 	container, err := m.client.GetContainer(containerName)
 	if err != nil {
-		return fmt.Errorf("container %s not found", containerName)
+		return containerNotFound(containerName)
 	}
 
 	// Stop if running
@@ -668,7 +677,7 @@ func (m *Manager) ImageExists(alias string) bool {
 func (m *Manager) CreateSnapshot(name, snapshotName string) error {
 	container, err := m.client.GetContainer(name)
 	if err != nil {
-		return fmt.Errorf("container %s not found", name)
+		return containerNotFound(name)
 	}
 
 	wasRunning := container.Status == "Running"
@@ -700,7 +709,7 @@ func (m *Manager) CreateSnapshot(name, snapshotName string) error {
 func (m *Manager) RestoreSnapshot(name, snapshotName string) error {
 	container, err := m.client.GetContainer(name)
 	if err != nil {
-		return fmt.Errorf("container %s not found", name)
+		return containerNotFound(name)
 	}
 
 	wasRunning := container.Status == "Running"
@@ -753,7 +762,7 @@ func (m *Manager) ListSnapshots(name string) ([]SnapshotInfo, error) {
 // DeleteSnapshot deletes a snapshot.
 func (m *Manager) DeleteSnapshot(name, snapshotName string) error {
 	if _, err := m.client.GetContainer(name); err != nil {
-		return fmt.Errorf("container %s not found", name)
+		return containerNotFound(name)
 	}
 	return m.client.DeleteSnapshot(name, snapshotName)
 }
@@ -864,7 +873,7 @@ func IsSeatbelted(path string) (bool, string) {
 // Set force=true to mount seatbelted directories (requires explicit acknowledgment).
 func (m *Manager) Mount(containerName, mountName, source, path string, readonly, force bool) error {
 	if _, err := m.client.GetContainer(containerName); err != nil {
-		return fmt.Errorf("container %s not found", containerName)
+		return containerNotFound(containerName)
 	}
 
 	// Check for seatbelted directories
@@ -888,7 +897,7 @@ func (m *Manager) Mount(containerName, mountName, source, path string, readonly,
 // Unmount removes a mount from a container.
 func (m *Manager) Unmount(containerName, mountName string) error {
 	if _, err := m.client.GetContainer(containerName); err != nil {
-		return fmt.Errorf("container %s not found", containerName)
+		return containerNotFound(containerName)
 	}
 
 	return m.client.RemoveDevice(containerName, mountName)
