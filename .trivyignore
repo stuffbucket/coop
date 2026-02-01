@@ -1,0 +1,7 @@
+# Known unfixed upstream vulnerabilities
+# These are tracked but have no available fix
+
+# Incus local privilege escalation via custom storage volumes
+# https://pkg.go.dev/vuln/GO-2025-4115
+# Upstream: github.com/lxc/incus - no fix released yet
+CVE-2025-0540
