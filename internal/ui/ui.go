@@ -45,9 +45,6 @@ var (
 	Logger = log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: false,
 	})
-
-	// Cache whether we're in a terminal
-	isTTY = term.IsTerminal(int(os.Stdout.Fd()))
 )
 
 // IsInteractive returns true if stdin is a terminal.
@@ -59,12 +56,12 @@ func IsInteractive() bool {
 // IsTTY returns true if stdout is a terminal.
 // Use this to gate colored output.
 func IsTTY() bool {
-	return isTTY
+	return term.IsTerminal(int(os.Stdout.Fd()))
 }
 
 // styled applies a style only if output is a TTY
 func styled(style lipgloss.Style, s string) string {
-	if !isTTY {
+	if !IsTTY() {
 		return s
 	}
 	return style.Render(s)
@@ -282,7 +279,7 @@ func WarningBox(title, content string) string {
 
 // Logo returns the coop ASCII art logo with gradient coloring.
 func Logo() string {
-	if !isTTY {
+	if !IsTTY() {
 		return ""
 	}
 
@@ -312,7 +309,7 @@ func Logo() string {
 
 // Tagline returns the styled tagline.
 func Tagline() string {
-	if !isTTY {
+	if !IsTTY() {
 		return "coop - AI Agent Container Manager"
 	}
 	return styled(mutedStyle, "  AI Agent Container Manager")
