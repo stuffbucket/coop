@@ -1,9 +1,12 @@
-.PHONY: build test lint vuln vuln-go vuln-strict clean all check
+.PHONY: build test lint vuln vuln-go vuln-strict clean all check go-version
 
 # Build settings
 BINARY := coop
 GO := go
 GOFLAGS := -trimpath -ldflags="-s -w"
+
+# Detect installed Go version (e.g., "1.25.6")
+GO_VERSION := $(shell $(GO) version | sed -E 's/go version go([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/')
 
 # Default target
 all: check build
@@ -62,3 +65,15 @@ clean:
 
 # CI target: strict checks
 ci: verify vuln-strict lint test build
+
+# Show detected Go version
+go-version:
+	@echo "Installed: go$(GO_VERSION)"
+	@echo "go.mod:    $$(grep '^go ' go.mod | awk '{print $$2}')"
+
+# Sync go.mod version to match installed Go
+go-upgrade:
+	@echo "Upgrading go.mod from $$(grep '^go ' go.mod | awk '{print $$2}') to $(GO_VERSION)"
+	@sed -i '' 's/^go [0-9][0-9.]*$$/go $(GO_VERSION)/' go.mod
+	$(GO) mod tidy
+	@echo "Done. Run 'make test' to verify."
