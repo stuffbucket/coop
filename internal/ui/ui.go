@@ -476,7 +476,7 @@ func TTYPrint(format string, args ...interface{}) bool {
 	if err != nil {
 		return false
 	}
-	defer tty.Close()
-	fmt.Fprintf(tty, format, args...)
+	defer func() { _ = tty.Close() }()
+	_, _ = fmt.Fprintf(tty, format, args...)
 	return true
 }
