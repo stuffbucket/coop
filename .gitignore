@@ -25,3 +25,7 @@ dist/
 *.tmp
 *.log
 /tmp/
+
+# Local agent/assistant state (not committed)
+.agents/
+.claude/
