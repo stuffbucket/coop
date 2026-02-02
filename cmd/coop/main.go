@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bsmi021/coop/internal/config"
-	"github.com/bsmi021/coop/internal/logging"
-	"github.com/bsmi021/coop/internal/sandbox"
-	"github.com/bsmi021/coop/internal/ui"
-	"github.com/bsmi021/coop/internal/vm"
+	"github.com/stuffbucket/coop/internal/config"
+	"github.com/stuffbucket/coop/internal/logging"
+	"github.com/stuffbucket/coop/internal/sandbox"
+	"github.com/stuffbucket/coop/internal/ui"
+	"github.com/stuffbucket/coop/internal/vm"
 )
 
 // appConfig holds the application configuration, loaded once at startup.

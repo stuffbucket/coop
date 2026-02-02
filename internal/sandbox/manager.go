@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bsmi021/coop/internal/cloudinit"
-	"github.com/bsmi021/coop/internal/config"
-	"github.com/bsmi021/coop/internal/incus"
-	"github.com/bsmi021/coop/internal/names"
-	"github.com/bsmi021/coop/internal/sshkeys"
-	"github.com/bsmi021/coop/internal/ui"
+	"github.com/stuffbucket/coop/internal/cloudinit"
+	"github.com/stuffbucket/coop/internal/config"
+	"github.com/stuffbucket/coop/internal/incus"
+	"github.com/stuffbucket/coop/internal/names"
+	"github.com/stuffbucket/coop/internal/sshkeys"
+	"github.com/stuffbucket/coop/internal/ui"
 	securejoin "github.com/cyphar/filepath-securejoin"
 )
 
