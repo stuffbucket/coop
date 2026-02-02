@@ -30,4 +30,22 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Homebrew formula
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          ./scripts/generate-formula.sh "$VERSION" > coop.rb
+          cat coop.rb
+
+      - name: Update Homebrew tap
+        env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/stuffbucket/homebrew-tap.git" tap
+          cp coop.rb tap/Formula/coop.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/coop.rb
+          git commit -m "Update coop to ${GITHUB_REF#refs/tags/}"
+          git push

@@ -16,11 +16,15 @@ builds:
     env:
       - CGO_ENABLED=0
     goos:
-      - linux
       - darwin
+      - linux
+      - windows
     goarch:
       - amd64
       - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -33,6 +37,10 @@ archives:
   - id: default
     formats:
       - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
@@ -92,24 +100,5 @@ release:
     
     **Manual download:** See assets below.
 
-# Homebrew tap configuration
-# Requires HOMEBREW_TAP_TOKEN secret with write access to stuffbucket/homebrew-tap
-brews:
-  - name: coop
-    ids:
-      - default
-    repository:
-      owner: stuffbucket
-      name: homebrew-tap
-      branch: main
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
-    homepage: "https://github.com/stuffbucket/coop"
-    description: "AI agent container management with security sandboxing"
-    license: "MIT"
-    # Skip if token not available (local builds)
-    skip_upload: auto
-    install: |
-      bin.install "coop"
-    test: |
-      system bin/"coop", "--help"
+# Homebrew formula is generated separately by release workflow
+# to produce lint-compliant output (goreleaser puts def install in arch blocks)

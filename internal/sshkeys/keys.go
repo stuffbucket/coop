@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/stuffbucket/coop/internal/config"
 	"golang.org/x/crypto/ssh"
@@ -142,19 +141,19 @@ func WriteSSHConfig(containerName, ip string) error {
 	}
 
 	// Use file locking to prevent races
-	lockFile := paths.ConfigFile + ".lock"
-	lock, err := os.OpenFile(lockFile, os.O_CREATE|os.O_RDWR, 0600)
+	lockPath := paths.ConfigFile + ".lock"
+	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to create lock file: %w", err)
 	}
 	defer func() { _ = lock.Close() }()
-	defer func() { _ = os.Remove(lockFile) }()
+	defer func() { _ = os.Remove(lockPath) }()
 
 	// Acquire exclusive lock
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+	if err := lockFile(lock); err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)
 	}
-	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
+	defer func() { _ = unlockFile(lock) }()
 
 	// Read existing config and filter out old entry for this container
 	var filteredLines []string
