@@ -1,4 +1,4 @@
-.PHONY: build test lint vuln vuln-go clean all check go-version ci ci-all act act-build act-lint
+.PHONY: build test lint vuln vuln-go clean all check go-version ci ci-all act act-build act-lint push hooks
 
 # Build settings
 BINARY := coop
@@ -101,3 +101,15 @@ act-build:
 act-lint:
 	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
 	act push -j lint $(ACT_WORKTREE_OPTS)
+
+# Push with CI verification (safe push)
+push: act
+	git push origin $$(git branch --show-current)
+
+# Install git hooks
+hooks:
+	@mkdir -p .git/hooks
+	@echo '#!/bin/sh' > .git/hooks/pre-push
+	@echo 'make act' >> .git/hooks/pre-push
+	@chmod +x .git/hooks/pre-push
+	@echo "Installed pre-push hook"
