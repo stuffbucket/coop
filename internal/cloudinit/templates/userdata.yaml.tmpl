@@ -70,8 +70,8 @@ runcmd:
 {{- end }}
   - 'grep -q "bashrc.d" /home/agent/.bashrc || echo "for f in ~/.bashrc.d/*.sh; do [ -r \"$f\" ] && . \"$f\"; done" >> /home/agent/.bashrc'
   
-  # Optional upgrades (non-fatal) - user version in ~/.local/bin takes precedence
-  - su - agent -c 'claude upgrade' || true
+  # Install Claude Code CLI for agent user (not in base image to reduce build memory)
+  - su - agent -c 'curl -fsSL https://claude.ai/install.sh | bash' || true
   
   # Firewall setup
   - ufw default deny incoming

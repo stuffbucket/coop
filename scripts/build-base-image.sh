@@ -7,7 +7,7 @@ set -euo pipefail
 IMAGE_NAME="coop-agent-base"
 BUILD_CONTAINER="coop-base-build"
 SOURCE_IMAGE="images:ubuntu/22.04/cloud"
-DESCRIPTION="Coop agent base: Ubuntu 22.04 + Python 3.13 + Go 1.24 + Node 24 + dev tools"
+DESCRIPTION="Coop agent base: Ubuntu 22.04 + Python 3.13 + Go 1.24 + Node 24 + dev tools (no Claude CLI)"
 
 echo "==> Building $IMAGE_NAME from $SOURCE_IMAGE"
 
@@ -99,20 +99,8 @@ export PATH=$PATH:/usr/local/go/bin
 GOPATH=/opt/go go install golang.org/x/tools/gopls@latest
 mv /opt/go/bin/gopls /usr/local/bin/
 
-# Claude Code CLI - install to /opt for system-wide use
-export CLAUDE_INSTALL_DIR=/opt/claude
-curl -fsSL https://claude.ai/install.sh | bash
-# The installer creates ~/.local/bin/claude as symlink to ~/.local/share/claude/versions/X.X.X
-# Move the actual installation to /opt/claude for system-wide access
-if [ -d /root/.local/share/claude ]; then
-    mv /root/.local/share/claude /opt/claude
-    # Fix the symlink to point to the new location (binary is the version number itself, not /claude)
-    CLAUDE_VERSION=$(ls /opt/claude/versions/ | head -1)
-    rm -f /root/.local/bin/claude
-    ln -sf /opt/claude/versions/${CLAUDE_VERSION} /usr/local/bin/claude
-fi
-# Clean up user-specific data (API keys etc should be per-user at runtime)
-rm -rf /root/.claude /root/.claude.json* /root/.local/share/claude
+# NOTE: Claude Code CLI is installed per-container via cloud-init, not in base image
+# This avoids OOM during base image build and keeps the image smaller
 
 # Verify installations
 echo "==> Verifying installations..."
@@ -121,7 +109,6 @@ python3 --version
 node --version
 npm --version
 gh --version | head -1
-/usr/local/bin/claude --version 2>&1 || echo "Note: claude may need API key to show version"
 
 # Lock ubuntu user and change UID to avoid conflict with agent (UID 1000)
 usermod -u 2000 ubuntu
