@@ -26,6 +26,7 @@ type Paths struct {
 	PrivateKey string // ~/.config/coop/ssh/id_ed25519
 	PublicKey  string // ~/.config/coop/ssh/id_ed25519.pub
 	ConfigFile string // ~/.config/coop/ssh/config
+	KnownHosts string // ~/.config/coop/ssh/known_hosts
 }
 
 // GetPaths returns the paths for coop SSH files.
@@ -37,6 +38,7 @@ func GetPaths() Paths {
 		PrivateKey: filepath.Join(dirs.SSH, KeyName),
 		PublicKey:  filepath.Join(dirs.SSH, KeyName+".pub"),
 		ConfigFile: filepath.Join(dirs.SSH, "config"),
+		KnownHosts: filepath.Join(dirs.SSH, "known_hosts"),
 	}
 }
 
@@ -111,8 +113,8 @@ func GetPublicKey() string {
 func SSHCommand(user, host string) string {
 	paths := GetPaths()
 
-	return fmt.Sprintf("ssh -i %s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s@%s",
-		paths.PrivateKey, user, host)
+	return fmt.Sprintf("ssh -i %s -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=%s %s@%s",
+		paths.PrivateKey, paths.KnownHosts, user, host)
 }
 
 // SSHArgs returns the SSH arguments as a slice for use with exec.
@@ -121,8 +123,8 @@ func SSHArgs(user, host string) []string {
 
 	return []string{
 		"-i", paths.PrivateKey,
-		"-o", "StrictHostKeyChecking=no",
-		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "UserKnownHostsFile=" + paths.KnownHosts,
 		fmt.Sprintf("%s@%s", user, host),
 	}
 }
@@ -144,9 +146,9 @@ Host %s
     HostName %s
     User agent
     IdentityFile %s
-    StrictHostKeyChecking no
-    UserKnownHostsFile /dev/null
-`, containerName, containerName, ip, paths.PrivateKey)
+    StrictHostKeyChecking accept-new
+    UserKnownHostsFile %s
+`, containerName, containerName, ip, paths.PrivateKey, paths.KnownHosts)
 
 	// Combine filtered config with new entry
 	var newConfig string
@@ -154,6 +156,16 @@ Host %s
 		newConfig = strings.Join(filteredLines, "\n") + "\n\n" + hostEntry
 	} else {
 		newConfig = hostEntry
+	}
+
+	// Ensure known_hosts exists with safe perms
+	if err := os.MkdirAll(paths.SSHDir, 0o700); err != nil {
+		return fmt.Errorf("failed to create ssh dir: %w", err)
+	}
+	if _, err := os.Stat(paths.KnownHosts); os.IsNotExist(err) {
+		if err := os.WriteFile(paths.KnownHosts, []byte{}, 0o600); err != nil {
+			return fmt.Errorf("failed to init known_hosts: %w", err)
+		}
 	}
 
 	if err := os.WriteFile(paths.ConfigFile, []byte(newConfig), 0600); err != nil {
