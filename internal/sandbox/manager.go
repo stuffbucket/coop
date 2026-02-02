@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	securejoin "github.com/cyphar/filepath-securejoin"
 	"github.com/stuffbucket/coop/internal/cloudinit"
 	"github.com/stuffbucket/coop/internal/config"
 	"github.com/stuffbucket/coop/internal/incus"
@@ -17,7 +18,6 @@ import (
 	"github.com/stuffbucket/coop/internal/platform"
 	"github.com/stuffbucket/coop/internal/sshkeys"
 	"github.com/stuffbucket/coop/internal/ui"
-	securejoin "github.com/cyphar/filepath-securejoin"
 )
 
 const (

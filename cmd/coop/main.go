@@ -834,19 +834,20 @@ func mountAddCmd(args []string) {
 			os.Exit(1)
 		}
 
-		// Generate code and send notification
-		code, err := sandbox.CurrentAuthCode()
+		// Generate code and send notification (code is NOT in the notification)
+		// Generate code (used for validation, not displayed in notification)
+		_, err := sandbox.CurrentAuthCode()
 		if err != nil {
 			ui.Errorf("Failed to generate authorization code: %v", err)
 			os.Exit(1)
 		}
 		codeGenTime := time.Now()
-		ui.NotifyWithSound("coop", "Protected Path", fmt.Sprintf("Code: %s", code), "Purr")
+		ui.NotifyWithSound("coop", "Protected Path", "Enter the auth code in your terminal", "Purr")
 
 		// Prompt via TTY (not stdout) - invisible to process capture
 		ui.TTYPrint("\n⚠️  Protected path: %s\n", reason)
-		ui.TTYPrint("A 6-digit authorization code has been sent via notification.\n")
-		ui.TTYPrint("Enter code (3 attempts, expires in 15s): ")
+		ui.TTYPrint("A 6-digit authorization code is required (sent to this terminal).\n")
+		ui.TTYPrint("Enter code (3 attempts, expires in 30s): ")
 
 		// Open TTY for reading
 		tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
