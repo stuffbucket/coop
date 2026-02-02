@@ -3,7 +3,7 @@ package sandbox
 import (
 	"testing"
 
-	"github.com/bsmi021/coop/internal/config"
+	"github.com/stuffbucket/coop/internal/config"
 )
 
 // TestDefaultContainerConfig verifies that DefaultContainerConfig uses config defaults.
@@ -68,7 +68,8 @@ func TestNewManagerBackwardCompatibility(t *testing.T) {
 	}
 
 	if mgr == nil {
-		t.Error("NewManager returned nil manager")
+		t.Fatal("NewManager returned nil manager")
+		return
 	}
 
 	// Verify the manager has a non-nil config
@@ -93,7 +94,6 @@ func TestNewManagerWithConfigStoresConfig(t *testing.T) {
 	if err != nil {
 		t.Skipf("skipping: Incus not available (%v)", err)
 	}
-
 	if mgr == nil {
 		t.Fatal("NewManagerWithConfig returned nil manager")
 	}
