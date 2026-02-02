@@ -81,11 +81,14 @@ func (c *ColimaBackend) validateConfig() error {
 
 	// VZ on non-native arch requires QEMU
 	if vm.VMType == "vz" {
-		hostArch := runtime.GOARCH
-		if hostArch == "arm64" {
+		var hostArch string
+		switch runtime.GOARCH {
+		case "arm64":
 			hostArch = "aarch64"
-		} else if hostArch == "amd64" {
+		case "amd64":
 			hostArch = "x86_64"
+		default:
+			hostArch = runtime.GOARCH
 		}
 		if vm.Arch != "" && vm.Arch != "host" && vm.Arch != hostArch {
 			return fmt.Errorf("vm_type 'vz' only supports native architecture; for %s emulation use vm_type 'qemu'", vm.Arch)
