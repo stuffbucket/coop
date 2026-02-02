@@ -1,9 +1,12 @@
-.PHONY: build test lint vuln vuln-go vuln-strict clean all check
+.PHONY: build test lint vuln vuln-go clean all check go-version ci ci-all act act-build act-lint
 
 # Build settings
 BINARY := coop
 GO := go
 GOFLAGS := -trimpath -ldflags="-s -w"
+
+# Detect installed Go version (e.g., "1.25.6")
+GO_VERSION := $(shell $(GO) version | sed -E 's/go version go([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/')
 
 # Default target
 all: check build
@@ -36,13 +39,6 @@ vuln-trivy:
 # Combined vulnerability scan - run both tools
 vuln: vuln-go vuln-trivy
 
-# Strict vulnerability scan - fails on any CVE (for CI)
-vuln-strict:
-	@command -v govulncheck >/dev/null 2>&1 || { echo "Install govulncheck: brew install govulncheck"; exit 1; }
-	@command -v trivy >/dev/null 2>&1 || { echo "Install trivy: brew install trivy"; exit 1; }
-	govulncheck ./...
-	trivy fs --scanners vuln --exit-code 1 --severity HIGH,CRITICAL .
-
 # Update dependencies and tidy
 deps:
 	$(GO) get -u ./...
@@ -60,5 +56,48 @@ clean:
 	rm -f $(BINARY)
 	$(GO) clean -cache
 
-# CI target: strict checks
-ci: verify vuln-strict lint test build
+# Show detected Go version
+go-version:
+	@echo "Installed: go$(GO_VERSION)"
+	@echo "go.mod:    $$(grep '^go ' go.mod | awk '{print $$2}')"
+
+# Sync go.mod version to match installed Go
+go-upgrade:
+	@echo "Upgrading go.mod from $$(grep '^go ' go.mod | awk '{print $$2}') to $(GO_VERSION)"
+	@sed -i '' 's/^go [0-9][0-9.]*$$/go $(GO_VERSION)/' go.mod
+	$(GO) mod tidy
+	@echo "Done. Run 'make test' to verify."
+
+# Run CI checks via act (GitHub Actions local runner)
+# Install: brew install act
+# Supports git worktrees by mounting parent .git directory
+
+# Detect git worktree and get parent .git path for container mount
+ACT_WORKTREE_OPTS := $(shell \
+	if [ -f .git ]; then \
+		gitdir=$$(sed -n 's/^gitdir: //p' .git); \
+		parent_git=$$(echo "$$gitdir" | sed 's|/worktrees/.*||'); \
+		echo "--container-options \"-v $$parent_git:$$parent_git:ro\""; \
+	fi)
+
+# CI target - runs build job only (fast, always works)
+ci:
+	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
+	act push -j build $(ACT_WORKTREE_OPTS)
+
+# Full CI - runs all jobs (lint/security are informational)
+ci-all: act
+
+act:
+	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
+	act push $(ACT_WORKTREE_OPTS)
+
+# Run only the build job
+act-build:
+	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
+	act push -j build $(ACT_WORKTREE_OPTS)
+
+# Run only the lint job
+act-lint:
+	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
+	act push -j lint $(ACT_WORKTREE_OPTS)

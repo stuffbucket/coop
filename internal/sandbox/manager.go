@@ -2,6 +2,7 @@
 package sandbox
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -24,7 +25,25 @@ const (
 	FallbackImage = "ubuntu/22.04/cloud"
 	// AgentProfile is the Incus profile for agent containers.
 	AgentProfile = "agent-sandbox"
+
+	// CloudInitTimeout is max time to wait for cloud-init to complete.
+	CloudInitTimeout = 10 * time.Minute
+	// CloudInitPollInterval is how often to check cloud-init status.
+	CloudInitPollInterval = 3 * time.Second
+
+	// DefaultProcessLimit protects against fork bombs in containers.
+	DefaultProcessLimit = "500"
+	// AgentUID is the UID for the agent user inside containers.
+	AgentUID = 1000
 )
+
+// ErrContainerNotFound is returned when a container doesn't exist.
+var ErrContainerNotFound = errors.New("container not found")
+
+// containerNotFound returns a wrapped error for a missing container.
+func containerNotFound(name string) error {
+	return fmt.Errorf("%w: %s", ErrContainerNotFound, name)
+}
 
 // Manager handles container lifecycle operations.
 type Manager struct {
@@ -113,8 +132,8 @@ func (m *Manager) Create(cfg ContainerConfig) error {
 		"user.user-data":   userData,
 		"limits.cpu":       fmt.Sprintf("%d", cfg.CPUs),
 		"limits.memory":    fmt.Sprintf("%dMiB", cfg.MemoryMB),
-		"limits.processes": "500",                                     // Fork bomb protection
-		"raw.idmap":        fmt.Sprintf("both %d 1000", os.Getuid()), // Map host UID to container agent (1000)
+		"limits.processes": DefaultProcessLimit,
+		"raw.idmap":        fmt.Sprintf("both %d %d", os.Getuid(), AgentUID),
 	}
 
 	// Resolve image: prefer base image, fall back to remote if missing
@@ -266,9 +285,8 @@ func (m *Manager) ensureAgentProfile(cfg ContainerConfig) error {
 }
 
 func (m *Manager) waitForCloudInit(name string, verbose bool) error {
-	// Poll for cloud-init completion (max 10 minutes)
-	timeout := time.After(10 * time.Minute)
-	ticker := time.NewTicker(3 * time.Second)
+	timeout := time.After(CloudInitTimeout)
+	ticker := time.NewTicker(CloudInitPollInterval)
 	defer ticker.Stop()
 
 	lastStatus := ""
@@ -384,7 +402,7 @@ func (m *Manager) getCloudInitStatus(name string) (string, error) {
 func (m *Manager) Start(name string) error {
 	container, err := m.client.GetContainer(name)
 	if err != nil {
-		return fmt.Errorf("container %s not found", name)
+		return containerNotFound(name)
 	}
 
 	if container.Status == "Running" {
@@ -402,7 +420,7 @@ func (m *Manager) Start(name string) error {
 func (m *Manager) Stop(name string, force bool) error {
 	container, err := m.client.GetContainer(name)
 	if err != nil {
-		return fmt.Errorf("container %s not found", name)
+		return containerNotFound(name)
 	}
 
 	if container.Status != "Running" {
@@ -420,7 +438,7 @@ func (m *Manager) Stop(name string, force bool) error {
 func (m *Manager) Lock(name string) error {
 	container, err := m.client.GetContainer(name)
 	if err != nil {
-		return fmt.Errorf("container %s not found", name)
+		return containerNotFound(name)
 	}
 
 	if container.Status != "Running" {
@@ -438,7 +456,7 @@ func (m *Manager) Lock(name string) error {
 func (m *Manager) Unlock(name string) error {
 	container, err := m.client.GetContainer(name)
 	if err != nil {
-		return fmt.Errorf("container %s not found", name)
+		return containerNotFound(name)
 	}
 
 	if container.Status != "Frozen" {
@@ -456,7 +474,7 @@ func (m *Manager) Unlock(name string) error {
 func (m *Manager) Logs(name string, follow bool, lines int) error {
 	container, err := m.client.GetContainer(name)
 	if err != nil {
-		return fmt.Errorf("container %s not found", name)
+		return containerNotFound(name)
 	}
 
 	if container.Status != "Running" {
@@ -483,7 +501,7 @@ func (m *Manager) Delete(name string, force bool) error {
 	// Check if container exists
 	container, err := m.client.GetContainer(containerName)
 	if err != nil {
-		return fmt.Errorf("container %s not found", containerName)
+		return containerNotFound(containerName)
 	}
 
 	// Stop if running
@@ -515,7 +533,6 @@ func (m *Manager) List() ([]ContainerInfo, error) {
 	for _, c := range containers {
 		info := ContainerInfo{
 			Name:      c.Name,
-			FullName:  c.Name,
 			Status:    c.Status,
 			CreatedAt: c.CreatedAt,
 			CPUs:      c.Config["limits.cpu"],
@@ -543,7 +560,6 @@ func (m *Manager) List() ([]ContainerInfo, error) {
 // ContainerInfo holds display information about a container.
 type ContainerInfo struct {
 	Name      string
-	FullName  string
 	Status    string
 	IP        string
 	CPUs      string
@@ -561,7 +577,6 @@ func (m *Manager) Status(name string) (*ContainerStatus, error) {
 
 	status := &ContainerStatus{
 		Name:      name,
-		FullName:  name,
 		Status:    container.Status,
 		CreatedAt: container.CreatedAt,
 		Config:    container.Config,
@@ -579,7 +594,6 @@ func (m *Manager) Status(name string) (*ContainerStatus, error) {
 // ContainerStatus holds detailed status information.
 type ContainerStatus struct {
 	Name      string
-	FullName  string
 	Status    string
 	IP        string
 	CreatedAt time.Time
@@ -663,7 +677,7 @@ func (m *Manager) ImageExists(alias string) bool {
 func (m *Manager) CreateSnapshot(name, snapshotName string) error {
 	container, err := m.client.GetContainer(name)
 	if err != nil {
-		return fmt.Errorf("container %s not found", name)
+		return containerNotFound(name)
 	}
 
 	wasRunning := container.Status == "Running"
@@ -695,7 +709,7 @@ func (m *Manager) CreateSnapshot(name, snapshotName string) error {
 func (m *Manager) RestoreSnapshot(name, snapshotName string) error {
 	container, err := m.client.GetContainer(name)
 	if err != nil {
-		return fmt.Errorf("container %s not found", name)
+		return containerNotFound(name)
 	}
 
 	wasRunning := container.Status == "Running"
@@ -748,7 +762,7 @@ func (m *Manager) ListSnapshots(name string) ([]SnapshotInfo, error) {
 // DeleteSnapshot deletes a snapshot.
 func (m *Manager) DeleteSnapshot(name, snapshotName string) error {
 	if _, err := m.client.GetContainer(name); err != nil {
-		return fmt.Errorf("container %s not found", name)
+		return containerNotFound(name)
 	}
 	return m.client.DeleteSnapshot(name, snapshotName)
 }
@@ -774,24 +788,24 @@ var sipProtectedPaths = []string{
 
 // sensitiveHomeDirs are user directories containing credentials, keys, or sensitive config.
 var sensitiveHomeDirs = []string{
-	"Library",                  // Keychains, app data, cookies
-	"Library/Keychains",        // macOS keychain files
-	"Library/Cookies",          // Browser cookies
+	"Library",                                // Keychains, app data, cookies
+	"Library/Keychains",                      // macOS keychain files
+	"Library/Cookies",                        // Browser cookies
 	"Library/Application Support/MobileSync", // iOS backups
-	".ssh",                     // SSH keys
-	".gnupg",                   // GPG keys
-	".aws",                     // AWS credentials
-	".azure",                   // Azure credentials
-	".config/gcloud",           // GCP credentials
-	".kube",                    // Kubernetes config
-	".docker",                  // Docker config and creds
-	".npmrc",                   // npm tokens (file)
-	".netrc",                   // Generic credential file
-	".gitconfig",               // May contain credentials
-	".git-credentials",         // Git credential storage
-	".config/gh",               // GitHub CLI tokens
-	".anthropic",               // Anthropic API keys
-	".openai",                  // OpenAI API keys
+	".ssh",                                   // SSH keys
+	".gnupg",                                 // GPG keys
+	".aws",                                   // AWS credentials
+	".azure",                                 // Azure credentials
+	".config/gcloud",                         // GCP credentials
+	".kube",                                  // Kubernetes config
+	".docker",                                // Docker config and creds
+	".npmrc",                                 // npm tokens (file)
+	".netrc",                                 // Generic credential file
+	".gitconfig",                             // May contain credentials
+	".git-credentials",                       // Git credential storage
+	".config/gh",                             // GitHub CLI tokens
+	".anthropic",                             // Anthropic API keys
+	".openai",                                // OpenAI API keys
 }
 
 // expandPath expands ~ and ~user to absolute paths.
@@ -859,7 +873,7 @@ func IsSeatbelted(path string) (bool, string) {
 // Set force=true to mount seatbelted directories (requires explicit acknowledgment).
 func (m *Manager) Mount(containerName, mountName, source, path string, readonly, force bool) error {
 	if _, err := m.client.GetContainer(containerName); err != nil {
-		return fmt.Errorf("container %s not found", containerName)
+		return containerNotFound(containerName)
 	}
 
 	// Check for seatbelted directories
@@ -883,7 +897,7 @@ func (m *Manager) Mount(containerName, mountName, source, path string, readonly,
 // Unmount removes a mount from a container.
 func (m *Manager) Unmount(containerName, mountName string) error {
 	if _, err := m.client.GetContainer(containerName); err != nil {
-		return fmt.Errorf("container %s not found", containerName)
+		return containerNotFound(containerName)
 	}
 
 	return m.client.RemoveDevice(containerName, mountName)
@@ -916,9 +930,9 @@ func (m *Manager) ListMounts(containerName string) ([]MountInfo, error) {
 
 // ContainerMounts holds mounts for a single container along with its status.
 type ContainerMounts struct {
-	Name    string
-	Status  string
-	Mounts  []MountInfo
+	Name   string
+	Status string
+	Mounts []MountInfo
 }
 
 // ListAllMounts returns mounts for all containers.
