@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/bsmi021/coop/internal/config"
-	"github.com/bsmi021/coop/internal/logging"
+	"github.com/stuffbucket/coop/internal/config"
+	"github.com/stuffbucket/coop/internal/logging"
 )
 
 // Status represents the state of a Lima instance.

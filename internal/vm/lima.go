@@ -8,8 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/bsmi021/coop/internal/config"
-	"github.com/bsmi021/coop/internal/logging"
+	"github.com/stuffbucket/coop/internal/config"
+	"github.com/stuffbucket/coop/internal/logging"
 )
 
 // LimaBackend implements Backend using Lima directly.
