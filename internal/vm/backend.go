@@ -4,9 +4,12 @@ package vm
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/stuffbucket/coop/internal/config"
+	"github.com/stuffbucket/coop/internal/logging"
 	"github.com/stuffbucket/coop/internal/platform"
 )
 
@@ -215,4 +218,72 @@ func (m *Manager) ListAvailableBackends() []string {
 func commandExists(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
+}
+
+// runStreamingCmd executes a command with stdout/stderr streamed to terminal and log.
+// Returns a wrapped error with context on failure.
+func runStreamingCmd(cmdName string, args []string, errContext string) error {
+	log := logging.Get()
+	log.Cmd(cmdName, args)
+
+	cmd := exec.Command(cmdName, args...)
+	cmd.Stdout = log.MultiWriter(os.Stdout)
+	cmd.Stderr = log.MultiWriter(os.Stderr)
+
+	if err := cmd.Run(); err != nil {
+		log.CmdEnd(cmdName, err)
+		return fmt.Errorf("%s: %w", errContext, err)
+	}
+	log.CmdEnd(cmdName, nil)
+	return nil
+}
+
+// runStreamingCmdWithStdin executes a command with stdin provided and stdout/stderr streamed.
+func runStreamingCmdWithStdin(cmdName string, args []string, stdin string, errContext string) error {
+	log := logging.Get()
+	log.Cmd(cmdName, args)
+
+	cmd := exec.Command(cmdName, args...)
+	cmd.Stdout = log.MultiWriter(os.Stdout)
+	cmd.Stderr = log.MultiWriter(os.Stderr)
+	cmd.Stdin = strings.NewReader(stdin)
+
+	if err := cmd.Run(); err != nil {
+		log.CmdEnd(cmdName, err)
+		return fmt.Errorf("%s: %w", errContext, err)
+	}
+	log.CmdEnd(cmdName, nil)
+	return nil
+}
+
+// runInteractiveCmd executes a command with full terminal I/O attached (for shells).
+func runInteractiveCmd(cmdName string, args []string, errContext string) error {
+	log := logging.Get()
+	log.Cmd(cmdName, args)
+
+	cmd := exec.Command(cmdName, args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		log.CmdEnd(cmdName, err)
+		return fmt.Errorf("%s: %w", errContext, err)
+	}
+	log.CmdEnd(cmdName, nil)
+	return nil
+}
+
+// runOutputCmd executes a command and returns its output.
+func runOutputCmd(cmdName string, args []string, errContext string) ([]byte, error) {
+	log := logging.Get()
+	log.Cmd(cmdName, args)
+
+	cmd := exec.Command(cmdName, args...)
+	output, err := cmd.Output()
+	log.CmdOutput(cmdName, output, err)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", errContext, err)
+	}
+	return output, nil
 }

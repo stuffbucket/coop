@@ -152,7 +152,6 @@ func (c *ColimaBackend) Status() (*Status, error) {
 }
 
 func (c *ColimaBackend) Start() error {
-	log := logging.Get()
 	profile := c.profileName()
 	vm := c.cfg.Settings.VM
 
@@ -212,102 +211,36 @@ func (c *ColimaBackend) Start() error {
 		}
 	}
 
-	log.Cmd("colima", args)
-	cmd := exec.Command("colima", args...)
-	cmd.Stdout = log.MultiWriter(os.Stdout)
-	cmd.Stderr = log.MultiWriter(os.Stderr)
-
 	// Handle storage pool recovery prompt
 	// Colima/Incus asks: "existing Incus data found, would you like to recover the storage pool(s)? [y/N]"
 	autoRecover := vm.StorageAutoRecover != nil && *vm.StorageAutoRecover
+	stdin := "n\n"
 	if autoRecover {
-		cmd.Stdin = strings.NewReader("y\n")
-	} else {
-		cmd.Stdin = strings.NewReader("n\n")
+		stdin = "y\n"
 	}
 
-	if err = cmd.Run(); err != nil {
-		log.CmdEnd("colima", err)
-		return fmt.Errorf("failed to start colima VM %q: %w", profile, err)
-	}
-	log.CmdEnd("colima", nil)
-	return nil
+	return runStreamingCmdWithStdin("colima", args, stdin, fmt.Sprintf("failed to start colima VM %q", profile))
 }
 
 func (c *ColimaBackend) Stop() error {
-	log := logging.Get()
 	profile := c.profileName()
-
-	args := []string{"stop", profile}
-	log.Cmd("colima", args)
-
-	cmd := exec.Command("colima", args...)
-	cmd.Stdout = log.MultiWriter(os.Stdout)
-	cmd.Stderr = log.MultiWriter(os.Stderr)
-
-	if err := cmd.Run(); err != nil {
-		log.CmdEnd("colima", err)
-		return fmt.Errorf("failed to stop colima VM %q: %w", profile, err)
-	}
-	log.CmdEnd("colima", nil)
-	return nil
+	return runStreamingCmd("colima", []string{"stop", profile}, fmt.Sprintf("failed to stop colima VM %q", profile))
 }
 
 func (c *ColimaBackend) Delete() error {
-	log := logging.Get()
 	profile := c.profileName()
-
-	args := []string{"delete", profile, "--force"}
-	log.Cmd("colima", args)
-
-	cmd := exec.Command("colima", args...)
-	cmd.Stdout = log.MultiWriter(os.Stdout)
-	cmd.Stderr = log.MultiWriter(os.Stderr)
-
-	if err := cmd.Run(); err != nil {
-		log.CmdEnd("colima", err)
-		return fmt.Errorf("failed to delete colima VM %q: %w", profile, err)
-	}
-	log.CmdEnd("colima", nil)
-	return nil
+	return runStreamingCmd("colima", []string{"delete", profile, "--force"}, fmt.Sprintf("failed to delete colima VM %q", profile))
 }
 
 func (c *ColimaBackend) Shell() error {
-	log := logging.Get()
 	profile := c.profileName()
-
-	// Colima uses: colima ssh <profile>
-	args := []string{"ssh", profile}
-	log.Cmd("colima", args)
-
-	cmd := exec.Command("colima", args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		log.CmdEnd("colima", err)
-		return fmt.Errorf("failed to open shell in colima VM %q: %w", profile, err)
-	}
-	log.CmdEnd("colima", nil)
-	return nil
+	return runInteractiveCmd("colima", []string{"ssh", profile}, fmt.Sprintf("failed to open shell in colima VM %q", profile))
 }
 
 func (c *ColimaBackend) Exec(command []string) ([]byte, error) {
-	log := logging.Get()
 	profile := c.profileName()
-
-	// colima ssh <profile> -- <command>
 	args := append([]string{"ssh", profile, "--"}, command...)
-	log.Cmd("colima", args)
-
-	cmd := exec.Command("colima", args...)
-	output, err := cmd.Output()
-	log.CmdOutput("colima", output, err)
-	if err != nil {
-		return nil, fmt.Errorf("failed to exec in colima VM %q: %w", profile, err)
-	}
-	return output, nil
+	return runOutputCmd("colima", args, fmt.Sprintf("failed to exec in colima VM %q", profile))
 }
 
 func (c *ColimaBackend) GetIncusSocket() (string, error) {

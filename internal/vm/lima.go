@@ -91,7 +91,6 @@ func (l *LimaBackend) Status() (*Status, error) {
 }
 
 func (l *LimaBackend) Start() error {
-	log := logging.Get()
 	name := l.instanceName()
 	vm := l.cfg.Settings.VM
 
@@ -130,17 +129,7 @@ func (l *LimaBackend) Start() error {
 		args = []string{"start", name}
 	}
 
-	log.Cmd("limactl", args)
-	cmd := exec.Command("limactl", args...)
-	cmd.Stdout = log.MultiWriter(os.Stdout)
-	cmd.Stderr = log.MultiWriter(os.Stderr)
-
-	if err = cmd.Run(); err != nil {
-		log.CmdEnd("limactl", err)
-		return fmt.Errorf("failed to start lima VM %q: %w", name, err)
-	}
-	log.CmdEnd("limactl", nil)
-	return nil
+	return runStreamingCmd("limactl", args, fmt.Sprintf("failed to start lima VM %q", name))
 }
 
 func (l *LimaBackend) findTemplate() string {
@@ -174,77 +163,24 @@ func (l *LimaBackend) findTemplate() string {
 }
 
 func (l *LimaBackend) Stop() error {
-	log := logging.Get()
 	name := l.instanceName()
-
-	args := []string{"stop", name}
-	log.Cmd("limactl", args)
-
-	cmd := exec.Command("limactl", args...)
-	cmd.Stdout = log.MultiWriter(os.Stdout)
-	cmd.Stderr = log.MultiWriter(os.Stderr)
-
-	if err := cmd.Run(); err != nil {
-		log.CmdEnd("limactl", err)
-		return fmt.Errorf("failed to stop lima VM %q: %w", name, err)
-	}
-	log.CmdEnd("limactl", nil)
-	return nil
+	return runStreamingCmd("limactl", []string{"stop", name}, fmt.Sprintf("failed to stop lima VM %q", name))
 }
 
 func (l *LimaBackend) Delete() error {
-	log := logging.Get()
 	name := l.instanceName()
-
-	args := []string{"delete", "--force", name}
-	log.Cmd("limactl", args)
-
-	cmd := exec.Command("limactl", args...)
-	cmd.Stdout = log.MultiWriter(os.Stdout)
-	cmd.Stderr = log.MultiWriter(os.Stderr)
-
-	if err := cmd.Run(); err != nil {
-		log.CmdEnd("limactl", err)
-		return fmt.Errorf("failed to delete lima VM %q: %w", name, err)
-	}
-	log.CmdEnd("limactl", nil)
-	return nil
+	return runStreamingCmd("limactl", []string{"delete", "--force", name}, fmt.Sprintf("failed to delete lima VM %q", name))
 }
 
 func (l *LimaBackend) Shell() error {
-	log := logging.Get()
 	name := l.instanceName()
-
-	args := []string{"shell", name}
-	log.Cmd("limactl", args)
-
-	cmd := exec.Command("limactl", args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		log.CmdEnd("limactl", err)
-		return fmt.Errorf("failed to open shell in lima VM %q: %w", name, err)
-	}
-	log.CmdEnd("limactl", nil)
-	return nil
+	return runInteractiveCmd("limactl", []string{"shell", name}, fmt.Sprintf("failed to open shell in lima VM %q", name))
 }
 
 func (l *LimaBackend) Exec(command []string) ([]byte, error) {
-	log := logging.Get()
 	name := l.instanceName()
-
 	args := append([]string{"shell", name}, command...)
-	log.Cmd("limactl", args)
-
-	cmd := exec.Command("limactl", args...)
-	output, err := cmd.Output()
-	log.CmdOutput("limactl", output, err)
-	if err != nil {
-		return nil, fmt.Errorf("failed to exec in lima VM %q: %w", name, err)
-	}
-	return output, nil
+	return runOutputCmd("limactl", args, fmt.Sprintf("failed to exec in lima VM %q", name))
 }
 
 func (l *LimaBackend) GetIncusSocket() (string, error) {
