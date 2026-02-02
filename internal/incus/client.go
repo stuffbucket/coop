@@ -8,8 +8,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/bsmi021/coop/internal/config"
-	"github.com/bsmi021/coop/internal/vm"
+	"github.com/stuffbucket/coop/internal/config"
+	"github.com/stuffbucket/coop/internal/vm"
 	incus "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/shared/api"
 )

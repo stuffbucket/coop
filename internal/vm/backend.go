@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"runtime"
 
-	"github.com/bsmi021/coop/internal/config"
+	"github.com/stuffbucket/coop/internal/config"
 )
 
 // Backend represents a VM management backend.
