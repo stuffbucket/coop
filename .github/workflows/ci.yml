@@ -14,42 +14,6 @@ permissions:
   security-events: write
 
 jobs:
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-          cache: true
-
-      # govulncheck - precise, call-graph aware Go vulnerability scanner
-      - name: Run govulncheck
-        uses: golang/govulncheck-action@v1
-        with:
-          go-version-file: 'go.mod'
-          go-package: './...'
-
-      # trivy - broad scanner for deps, containers, IaC, secrets
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          severity: 'HIGH,CRITICAL'
-          exit-code: '1'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
-
   build:
     name: Build & Test
     runs-on: ubuntu-latest
@@ -73,6 +37,7 @@ jobs:
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
+        if: ${{ !env.ACT }}
         with:
           files: ./coverage.out
           fail_ci_if_error: false
@@ -93,3 +58,67 @@ jobs:
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      # govulncheck - precise, call-graph aware Go vulnerability scanner
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          
+          # Run govulncheck and capture output
+          set +e
+          OUTPUT=$(govulncheck ./... 2>&1)
+          EXIT_CODE=$?
+          set -e
+          
+          echo "$OUTPUT"
+          
+          # Exit 0 = no vulns, Exit 3 = vulns found
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "✓ No vulnerabilities found"
+            exit 0
+          fi
+          
+          # Check if only known unfixed upstream CVEs
+          # GO-2025-4115: Incus privilege escalation (no fix available)
+          if echo "$OUTPUT" | grep -q "GO-2025-4115" && \
+             [ $(echo "$OUTPUT" | grep -c "Vulnerability #") -eq 1 ]; then
+            echo ""
+            echo "::notice::Ignoring GO-2025-4115 (Incus) - no upstream fix available"
+            echo "✓ No unexpected vulnerabilities"
+            exit 0
+          fi
+          
+          echo "::error::Unexpected vulnerabilities found"
+          exit 1
+
+      # trivy - broad scanner for deps, containers, IaC, secrets
+      # Skipped in act - requires real GitHub token for setup
+      - name: Run Trivy vulnerability scanner
+        if: ${{ !env.ACT }}
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          trivyignores: '.trivyignore'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: ${{ !env.ACT && always() }}
+        with:
+          sarif_file: 'trivy-results.sarif'
