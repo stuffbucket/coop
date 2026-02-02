@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	securejoin "github.com/cyphar/filepath-securejoin"
 	"github.com/bsmi021/coop/internal/cloudinit"
 	"github.com/bsmi021/coop/internal/config"
 	"github.com/bsmi021/coop/internal/incus"
@@ -309,14 +310,15 @@ func (m *Manager) waitForCloudInit(name string, verbose bool) error {
 				lastLogLine = m.streamCloudInitLogs(name, lastLogLine)
 			}
 
-			if status == "done" {
+			ciStatus := CloudInitState(status)
+			if ciStatus.IsDone() {
 				if verbose {
 					// Final log flush
 					m.streamCloudInitLogs(name, lastLogLine)
 				}
 				return nil
 			}
-			if status == "error" || status == "disabled" {
+			if ciStatus.IsFailed() {
 				if verbose {
 					m.streamCloudInitLogs(name, lastLogLine)
 				}
@@ -405,7 +407,7 @@ func (m *Manager) Start(name string) error {
 		return containerNotFound(name)
 	}
 
-	if container.Status == "Running" {
+	if ContainerState(container.Status) == StateRunning {
 		return fmt.Errorf("container %s is already running", name)
 	}
 
@@ -423,7 +425,7 @@ func (m *Manager) Stop(name string, force bool) error {
 		return containerNotFound(name)
 	}
 
-	if container.Status != "Running" {
+	if ContainerState(container.Status) != StateRunning {
 		return fmt.Errorf("container %s is not running (status: %s)", name, container.Status)
 	}
 
@@ -441,7 +443,7 @@ func (m *Manager) Lock(name string) error {
 		return containerNotFound(name)
 	}
 
-	if container.Status != "Running" {
+	if ContainerState(container.Status) != StateRunning {
 		return fmt.Errorf("container %s is not running (status: %s)", name, container.Status)
 	}
 
@@ -459,7 +461,7 @@ func (m *Manager) Unlock(name string) error {
 		return containerNotFound(name)
 	}
 
-	if container.Status != "Frozen" {
+	if ContainerState(container.Status) != StateFrozen {
 		return fmt.Errorf("container %s is not locked (status: %s)", name, container.Status)
 	}
 
@@ -477,7 +479,7 @@ func (m *Manager) Logs(name string, follow bool, lines int) error {
 		return containerNotFound(name)
 	}
 
-	if container.Status != "Running" {
+	if ContainerState(container.Status) != StateRunning {
 		return fmt.Errorf("container %s is not running", name)
 	}
 
@@ -505,7 +507,7 @@ func (m *Manager) Delete(name string, force bool) error {
 	}
 
 	// Stop if running
-	if container.Status == "Running" {
+	if ContainerState(container.Status) == StateRunning {
 		fmt.Printf("Stopping container %s...\n", containerName)
 		if err := m.client.StopContainer(containerName, force); err != nil {
 			return fmt.Errorf("failed to stop container: %w", err)
@@ -545,7 +547,7 @@ func (m *Manager) List() ([]ContainerInfo, error) {
 		}
 
 		// Try to get IP if running
-		if c.Status == "Running" {
+		if ContainerState(c.Status) == StateRunning {
 			if ip, err := m.client.GetContainerIP(c.Name); err == nil {
 				info.IP = ip
 			}
@@ -582,7 +584,7 @@ func (m *Manager) Status(name string) (*ContainerStatus, error) {
 		Config:    container.Config,
 	}
 
-	if container.Status == "Running" {
+	if ContainerState(container.Status) == StateRunning {
 		if ip, err := m.client.GetContainerIP(name); err == nil {
 			status.IP = ip
 		}
@@ -607,7 +609,7 @@ func (m *Manager) SSH(name string) (string, error) {
 		return "", fmt.Errorf("container %s not found", name)
 	}
 
-	if container.Status != "Running" {
+	if ContainerState(container.Status) != StateRunning {
 		return "", fmt.Errorf("container %s is not running", name)
 	}
 
@@ -626,7 +628,7 @@ func (m *Manager) SSHArgs(name string) ([]string, error) {
 		return nil, fmt.Errorf("container %s not found", name)
 	}
 
-	if container.Status != "Running" {
+	if ContainerState(container.Status) != StateRunning {
 		return nil, fmt.Errorf("container %s is not running", name)
 	}
 
@@ -645,7 +647,7 @@ func (m *Manager) Exec(name string, command []string) (int, error) {
 		return -1, fmt.Errorf("container %s not found", name)
 	}
 
-	if container.Status != "Running" {
+	if ContainerState(container.Status) != StateRunning {
 		return -1, fmt.Errorf("container %s is not running", name)
 	}
 
@@ -680,7 +682,7 @@ func (m *Manager) CreateSnapshot(name, snapshotName string) error {
 		return containerNotFound(name)
 	}
 
-	wasRunning := container.Status == "Running"
+	wasRunning := ContainerState(container.Status) == StateRunning
 	if wasRunning {
 		// Stop for consistent snapshot
 		if err := m.client.StopContainer(name, false); err != nil {
@@ -712,7 +714,7 @@ func (m *Manager) RestoreSnapshot(name, snapshotName string) error {
 		return containerNotFound(name)
 	}
 
-	wasRunning := container.Status == "Running"
+	wasRunning := ContainerState(container.Status) == StateRunning
 	if wasRunning {
 		if err := m.client.StopContainer(name, false); err != nil {
 			return fmt.Errorf("failed to stop container for restore: %w", err)
@@ -806,6 +808,8 @@ var sensitiveHomeDirs = []string{
 	".config/gh",                             // GitHub CLI tokens
 	".anthropic",                             // Anthropic API keys
 	".openai",                                // OpenAI API keys
+	".config",                                // Parent of coop config
+	".config/coop",                           // Coop trust root (hard block)
 }
 
 // expandPath expands ~ and ~user to absolute paths.
@@ -860,13 +864,34 @@ func IsSeatbelted(path string) (bool, string) {
 	if home != "" {
 		for _, dir := range sensitiveHomeDirs {
 			protected := filepath.Join(home, dir)
-			if expanded == protected || strings.HasPrefix(expanded, protected+"/") {
+			if pathContains(protected, expanded) || pathContains(expanded, protected) {
+				// Hard block for coop trust root
+				if strings.HasSuffix(protected, ".config/coop") {
+					return true, fmt.Sprintf("~/%s is a protected Coop path and cannot be mounted", dir)
+				}
 				return true, fmt.Sprintf("~/%s contains sensitive data (credentials, keys, tokens)", dir)
 			}
 		}
 	}
 
 	return false, ""
+}
+
+// pathContains returns true if child is inside parent (after secure path resolution).
+func pathContains(parent, child string) bool {
+	parent = filepath.Clean(parent)
+	child = filepath.Clean(child)
+
+	rel, err := filepath.Rel(parent, child)
+	if err != nil {
+		return false
+	}
+	// SecureJoin prevents traversal via symlinks inside child
+	secured, err := securejoin.SecureJoin(parent, rel)
+	if err != nil {
+		return false
+	}
+	return secured == child
 }
 
 // Mount adds a host directory mount to a running container.
