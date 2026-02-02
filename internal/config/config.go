@@ -84,6 +84,9 @@ type Settings struct {
 	DefaultMemoryMB int    `json:"default_memory_mb,omitempty"`
 	DefaultDiskGB   int    `json:"default_disk_gb,omitempty"`
 	DefaultImage    string `json:"default_image,omitempty"`
+	FallbackImage   string `json:"fallback_image,omitempty"`
+	// FallbackFingerprint must match the local alias used for fallback_image.
+	FallbackFingerprint string `json:"fallback_fingerprint,omitempty"`
 
 	// Incus connection (auto-detected if empty)
 	IncusSocket string `json:"incus_socket,omitempty"`
@@ -198,10 +201,12 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Dirs: dirs,
 		Settings: Settings{
-			DefaultCPUs:     2,
-			DefaultMemoryMB: 4096,
-			DefaultDiskGB:   20,
-			DefaultImage:    "coop-agent-base",
+			DefaultCPUs:         2,
+			DefaultMemoryMB:     4096,
+			DefaultDiskGB:       20,
+			DefaultImage:        "coop-agent-base",
+			FallbackImage:       "",
+			FallbackFingerprint: "",
 			VM: VMSettings{
 				BackendPriority: []string{"colima", "lima"},
 				Instance:        "incus",
@@ -298,6 +303,12 @@ func Load() (*Config, error) {
 func (c *Config) applyEnvOverrides() {
 	if v := os.Getenv("COOP_DEFAULT_IMAGE"); v != "" {
 		c.Settings.DefaultImage = v
+	}
+	if v := os.Getenv("COOP_FALLBACK_IMAGE"); v != "" {
+		c.Settings.FallbackImage = v
+	}
+	if v := os.Getenv("COOP_FALLBACK_FINGERPRINT"); v != "" {
+		c.Settings.FallbackFingerprint = v
 	}
 	if v := os.Getenv("COOP_INCUS_SOCKET"); v != "" {
 		c.Settings.IncusSocket = v
