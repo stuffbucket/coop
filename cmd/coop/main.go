@@ -19,9 +19,21 @@ import (
 	"github.com/bsmi021/coop/internal/vm"
 )
 
+// appConfig holds the application configuration, loaded once at startup.
+var appConfig *config.Config
+
 func main() {
-	// Initialize logging early
-	initLogging()
+	// Load config once for the entire application
+	cfg, err := config.Load()
+	if err != nil {
+		// Use defaults if config doesn't exist
+		defaultCfg := config.DefaultConfig()
+		cfg = &defaultCfg
+	}
+	appConfig = cfg
+
+	// Initialize logging with loaded config
+	initLogging(appConfig)
 	defer func() { _ = logging.Close() }()
 
 	if len(os.Args) < 2 {
@@ -75,22 +87,14 @@ func main() {
 	}
 }
 
-func initLogging() {
-	cfg, err := config.Load()
-	if err != nil {
-		// Fallback to default if config load fails
-		dirs := config.GetDirectories()
-		_ = logging.Init(logging.DefaultConfig(dirs.Logs))
-		return
-	}
-
+func initLogging(cfg *config.Config) {
 	logCfg := logging.Config{
 		Dir:        cfg.Dirs.Logs,
-		MaxSizeMB:  cfg.Settings.Log.MaxSizeMB,
-		MaxBackups: cfg.Settings.Log.MaxBackups,
-		MaxAgeDays: cfg.Settings.Log.MaxAgeDays,
-		Compress:   cfg.Settings.Log.Compress,
-		Debug:      cfg.Settings.Log.Debug,
+		MaxSizeMB:  appConfig.Settings.Log.MaxSizeMB,
+		MaxBackups: appConfig.Settings.Log.MaxBackups,
+		MaxAgeDays: appConfig.Settings.Log.MaxAgeDays,
+		Compress:   appConfig.Settings.Log.Compress,
+		Debug:      appConfig.Settings.Log.Debug,
 	}
 
 	if err := logging.Init(logCfg); err != nil {
@@ -154,7 +158,7 @@ func printUsage() {
 // mustManager creates a new sandbox.Manager or exits with an error.
 // This centralizes the repeated pattern of creating a manager and handling errors.
 func mustManager() *sandbox.Manager {
-	mgr, err := sandbox.NewManager()
+	mgr, err := sandbox.NewManagerWithConfig(appConfig)
 	if err != nil {
 		ui.Errorf("Error: %v", err)
 		os.Exit(1)
@@ -564,7 +568,6 @@ func execCmd(args []string) {
 
 func configCmd(args []string) {
 	dirs := config.GetDirectories()
-	cfg := config.DefaultConfig()
 
 	fmt.Println(ui.Bold("Coop Configuration"))
 	fmt.Println(strings.Repeat("=", 40))
@@ -581,16 +584,16 @@ func configCmd(args []string) {
 	fmt.Printf("  Logs:      %s\n", ui.Path(dirs.Logs))
 
 	fmt.Println("\n" + ui.Header("Defaults:"))
-	fmt.Printf("  CPUs:      %d\n", cfg.Settings.DefaultCPUs)
-	fmt.Printf("  Memory:    %d MB\n", cfg.Settings.DefaultMemoryMB)
-	fmt.Printf("  Disk:      %d GB\n", cfg.Settings.DefaultDiskGB)
-	fmt.Printf("  Image:     %s\n", ui.Name(cfg.Settings.DefaultImage))
+	fmt.Printf("  CPUs:      %d\n", appConfig.Settings.DefaultCPUs)
+	fmt.Printf("  Memory:    %d MB\n", appConfig.Settings.DefaultMemoryMB)
+	fmt.Printf("  Disk:      %d GB\n", appConfig.Settings.DefaultDiskGB)
+	fmt.Printf("  Image:     %s\n", ui.Name(appConfig.Settings.DefaultImage))
 
 	fmt.Println("\n" + ui.Header("Environment Overrides:"))
 	printEnvVar("COOP_CONFIG_DIR", dirs.Config)
 	printEnvVar("COOP_DATA_DIR", dirs.Data)
 	printEnvVar("COOP_CACHE_DIR", dirs.Cache)
-	printEnvVar("COOP_DEFAULT_IMAGE", cfg.Settings.DefaultImage)
+	printEnvVar("COOP_DEFAULT_IMAGE", appConfig.Settings.DefaultImage)
 
 	// Check if SSH keys exist
 	fmt.Println("\n" + ui.Header("SSH Keys:"))
@@ -612,21 +615,21 @@ func configCmd(args []string) {
 	// Logging info
 	fmt.Println("\n" + ui.Header("Logging:"))
 	fmt.Printf("  Log file:    %s\n", ui.Path(dirs.Logs+"/coop.log"))
-	fmt.Printf("  Max size:    %d MB\n", cfg.Settings.Log.MaxSizeMB)
-	fmt.Printf("  Max backups: %d\n", cfg.Settings.Log.MaxBackups)
-	fmt.Printf("  Max age:     %d days\n", cfg.Settings.Log.MaxAgeDays)
-	fmt.Printf("  Compress:    %t\n", cfg.Settings.Log.Compress)
-	fmt.Printf("  Debug:       %t\n", cfg.Settings.Log.Debug)
+	fmt.Printf("  Max size:    %d MB\n", appConfig.Settings.Log.MaxSizeMB)
+	fmt.Printf("  Max backups: %d\n", appConfig.Settings.Log.MaxBackups)
+	fmt.Printf("  Max age:     %d days\n", appConfig.Settings.Log.MaxAgeDays)
+	fmt.Printf("  Compress:    %t\n", appConfig.Settings.Log.Compress)
+	fmt.Printf("  Debug:       %t\n", appConfig.Settings.Log.Debug)
 
 	// VM settings (macOS and non-native Linux)
 	if runtime.GOOS == "darwin" {
 		fmt.Println("\n" + ui.Header("VM Backend:"))
-		fmt.Printf("  Priority:   %v\n", cfg.Settings.VM.BackendPriority)
-		fmt.Printf("  Instance:   %s\n", ui.Name(cfg.Settings.VM.Instance))
-		fmt.Printf("  CPUs:       %d\n", cfg.Settings.VM.CPUs)
-		fmt.Printf("  Memory:     %d GB\n", cfg.Settings.VM.MemoryGB)
-		fmt.Printf("  Disk:       %d GB\n", cfg.Settings.VM.DiskGB)
-		fmt.Printf("  Auto-start: %t\n", cfg.Settings.VM.AutoStart)
+		fmt.Printf("  Priority:   %v\n", appConfig.Settings.VM.BackendPriority)
+		fmt.Printf("  Instance:   %s\n", ui.Name(appConfig.Settings.VM.Instance))
+		fmt.Printf("  CPUs:       %d\n", appConfig.Settings.VM.CPUs)
+		fmt.Printf("  Memory:     %d GB\n", appConfig.Settings.VM.MemoryGB)
+		fmt.Printf("  Disk:       %d GB\n", appConfig.Settings.VM.DiskGB)
+		fmt.Printf("  Auto-start: %t\n", appConfig.Settings.VM.AutoStart)
 	}
 }
 
@@ -1058,13 +1061,7 @@ func vmCmd(args []string) {
 		os.Exit(1)
 	}
 
-	cfg, err := config.Load()
-	if err != nil {
-		ui.Errorf("Error loading config: %v", err)
-		os.Exit(1)
-	}
-
-	mgr, err := vm.NewManager(cfg)
+	mgr, err := vm.NewManager(appConfig)
 	if err != nil {
 		ui.Errorf("Error creating VM manager: %v", err)
 		os.Exit(1)
@@ -1102,7 +1099,7 @@ func vmCmd(args []string) {
 		}
 
 	case "start":
-		ui.Printf("Starting VM (backend: %s, instance: %s)...\n", mgr.Backend().Name(), ui.Name(cfg.Settings.VM.Instance))
+		ui.Printf("Starting VM (backend: %s, instance: %s)...\n", mgr.Backend().Name(), ui.Name(appConfig.Settings.VM.Instance))
 		if err := mgr.Start(); err != nil {
 			ui.Errorf("Error starting VM: %v", err)
 			os.Exit(1)
@@ -1110,7 +1107,7 @@ func vmCmd(args []string) {
 		ui.Success("VM is running")
 
 	case "stop":
-		ui.Printf("Stopping VM (backend: %s, instance: %s)...\n", mgr.Backend().Name(), ui.Name(cfg.Settings.VM.Instance))
+		ui.Printf("Stopping VM (backend: %s, instance: %s)...\n", mgr.Backend().Name(), ui.Name(appConfig.Settings.VM.Instance))
 		if err := mgr.Stop(); err != nil {
 			ui.Errorf("Error stopping VM: %v", err)
 			os.Exit(1)
@@ -1125,7 +1122,7 @@ func vmCmd(args []string) {
 		}
 
 	case "delete":
-		ui.Printf("Deleting VM (backend: %s, instance: %s)...\n", mgr.Backend().Name(), ui.Name(cfg.Settings.VM.Instance))
+		ui.Printf("Deleting VM (backend: %s, instance: %s)...\n", mgr.Backend().Name(), ui.Name(appConfig.Settings.VM.Instance))
 		if err := mgr.Delete(); err != nil {
 			ui.Errorf("Error deleting VM: %v", err)
 			os.Exit(1)
@@ -1144,7 +1141,7 @@ func vmCmd(args []string) {
 		backends := mgr.ListAvailableBackends()
 		fmt.Printf("%s %v\n", ui.Bold("Available backends:"), backends)
 		fmt.Printf("%s %s\n", ui.Bold("Selected backend:"), ui.Name(mgr.Backend().Name()))
-		fmt.Printf("%s %v\n", ui.Bold("Priority order:"), cfg.Settings.VM.BackendPriority)
+		fmt.Printf("%s %v\n", ui.Bold("Priority order:"), appConfig.Settings.VM.BackendPriority)
 
 	default:
 		ui.Errorf("Unknown vm subcommand: %s", args[0])
@@ -1196,8 +1193,7 @@ func imageListCmd(args []string) {
 	mgr := mustManager()
 
 	// Get socket path from VM backend to pass to incus CLI
-	cfg, _ := config.Load()
-	vmMgr, err := vm.NewManager(cfg)
+	vmMgr, err := vm.NewManager(appConfig)
 	if err != nil {
 		ui.Errorf("Error initializing VM manager: %v", err)
 		os.Exit(1)
