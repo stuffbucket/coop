@@ -108,4 +108,17 @@ hooks:
 	@echo '#!/bin/sh' > .git/hooks/pre-push
 	@echo 'make act' >> .git/hooks/pre-push
 	@chmod +x .git/hooks/pre-push
-	@echo "Installed pre-push hook"
+	@echo '#!/bin/sh' > .git/hooks/commit-msg
+	@echo '# Validate conventional commit format' >> .git/hooks/commit-msg
+	@echo 'msg=$$(cat "$$1")' >> .git/hooks/commit-msg
+	@echo 'pattern="^(feat|fix|refactor|test|build|chore|docs|perf|ci)(\\(.+\\))?: .{1,50}"' >> .git/hooks/commit-msg
+	@echo 'if ! echo "$$msg" | head -1 | grep -qE "$$pattern"; then' >> .git/hooks/commit-msg
+	@echo '  echo "Error: Invalid commit message format"' >> .git/hooks/commit-msg
+	@echo '  echo "Expected: type(scope)?: description (50 chars max)"' >> .git/hooks/commit-msg
+	@echo '  echo "Types: feat, fix, refactor, test, build, chore, docs, perf, ci"' >> .git/hooks/commit-msg
+	@echo '  echo ""' >> .git/hooks/commit-msg
+	@echo '  echo "Your message: $$msg"' >> .git/hooks/commit-msg
+	@echo '  exit 1' >> .git/hooks/commit-msg
+	@echo 'fi' >> .git/hooks/commit-msg
+	@chmod +x .git/hooks/commit-msg
+	@echo "Installed pre-push and commit-msg hooks"
