@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
+	"github.com/gen2brain/beeep"
 	"golang.org/x/term"
 )
 
@@ -443,30 +444,53 @@ func visibleWidth(s string) int {
 	return width
 }
 
-// Notify sends a macOS notification. Falls back silently on other platforms.
+// Notify sends a user notification (best effort, cross-platform).
 // This bypasses stdout/stderr so forked processes won't capture it.
 func Notify(title, subtitle, message string) {
-	if runtime.GOOS != "darwin" {
+	body := message
+	if subtitle != "" {
+		body = fmt.Sprintf("%s — %s", subtitle, message)
+	}
+
+	// Primary: beeep supports macOS, Windows, Linux (notify-send)
+	if err := beeep.Notify(title, body, ""); err == nil {
 		return
 	}
 
-	script := fmt.Sprintf(`display notification %q with title %q subtitle %q`,
-		message, title, subtitle)
-
-	// Fire and forget - don't block on notification delivery
-	_ = exec.Command("osascript", "-e", script).Start()
+	// Fallback: macOS osascript (subtitle support)
+	if runtime.GOOS == "darwin" {
+		script := fmt.Sprintf(`display notification %q with title %q subtitle %q`, message, title, subtitle)
+		_ = exec.Command("osascript", "-e", script).Start()
+	}
 }
 
-// NotifyWithSound sends a macOS notification with a sound.
+// NotifyWithSound sends a notification with optional sound.
 func NotifyWithSound(title, subtitle, message, sound string) {
-	if runtime.GOOS != "darwin" {
+	body := message
+	if subtitle != "" {
+		body = fmt.Sprintf("%s — %s", subtitle, message)
+	}
+
+	// Primary: cross-platform popup
+	if err := beeep.Notify(title, body, ""); err == nil {
+		// Optionally add sound on macOS
+		if runtime.GOOS == "darwin" && sound != "" {
+			script := fmt.Sprintf(`display notification %q with title %q subtitle %q sound name %q`, message, title, subtitle, sound)
+			_ = exec.Command("osascript", "-e", script).Start()
+		}
 		return
 	}
 
-	script := fmt.Sprintf(`display notification %q with title %q subtitle %q sound name %q`,
-		message, title, subtitle, sound)
-
-	_ = exec.Command("osascript", "-e", script).Start()
+	// Fallback macOS
+	if runtime.GOOS == "darwin" {
+		if sound != "" {
+			script := fmt.Sprintf(`display notification %q with title %q subtitle %q sound name %q`, message, title, subtitle, sound)
+			_ = exec.Command("osascript", "-e", script).Start()
+		} else {
+			script := fmt.Sprintf(`display notification %q with title %q subtitle %q`, message, title, subtitle)
+			_ = exec.Command("osascript", "-e", script).Start()
+		}
+	}
 }
 
 // TTYPrint writes directly to /dev/tty, bypassing stdout/stderr redirection.

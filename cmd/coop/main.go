@@ -835,7 +835,11 @@ func mountAddCmd(args []string) {
 		}
 
 		// Generate code and send notification
-		code := sandbox.CurrentAuthCode()
+		code, err := sandbox.CurrentAuthCode()
+		if err != nil {
+			ui.Errorf("Failed to generate authorization code: %v", err)
+			os.Exit(1)
+		}
 		codeGenTime := time.Now()
 		ui.NotifyWithSound("coop", "Protected Path", fmt.Sprintf("Code: %s", code), "Purr")
 
@@ -865,7 +869,7 @@ func mountAddCmd(args []string) {
 			_, _ = fmt.Fscanln(tty, &input)
 			input = strings.TrimSpace(input)
 
-			if sandbox.ValidateAuthCode(input) {
+			if ok, _ := sandbox.ValidateAuthCode(input); ok {
 				forceAuthorized = true
 				ui.TTYPrint("✓ Authorized\n\n")
 				break
@@ -1222,10 +1226,10 @@ func imageListCmd(args []string) {
 		Aliases []struct {
 			Name string `json:"name"`
 		} `json:"aliases"`
-		Fingerprint  string `json:"fingerprint"`
-		Size         int64  `json:"size"`
-		Architecture string `json:"architecture"`
-		UploadedAt   string `json:"uploaded_at"`
+		Fingerprint  string            `json:"fingerprint"`
+		Size         int64             `json:"size"`
+		Architecture string            `json:"architecture"`
+		UploadedAt   string            `json:"uploaded_at"`
 		Properties   map[string]string `json:"properties"`
 	}
 
