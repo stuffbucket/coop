@@ -542,12 +542,12 @@ func PromptAuthCode(cfg AuthCodePromptConfig) AuthCodeResult {
 	deadline := startTime.Add(cfg.Timeout)
 
 	// Initial display
-	fmt.Fprintf(tty, "\n⚠️  Protected path: %s\n", cfg.Reason)
-	fmt.Fprintf(tty, "A 6-digit authorization code is required.\n\n")
+	_, _ = fmt.Fprintf(tty, "\n⚠️  Protected path: %s\n", cfg.Reason)
+	_, _ = fmt.Fprintf(tty, "A 6-digit authorization code is required.\n\n")
 
 	// Style definitions
 	barWidth := 20
-	remaining := cfg.Timeout
+	var remaining time.Duration
 
 	// Input channel
 	inputCh := make(chan string, 1)
@@ -571,7 +571,7 @@ func PromptAuthCode(cfg AuthCodePromptConfig) AuthCodeResult {
 		lastBar := ""
 
 		// Move cursor to show input area
-		fmt.Fprintf(tty, "Enter code (%d/%d attempts): ", attempt, cfg.Attempts)
+		_, _ = fmt.Fprintf(tty, "Enter code (%d/%d attempts): ", attempt, cfg.Attempts)
 
 		inputReceived := false
 		for !inputReceived {
@@ -582,23 +582,23 @@ func PromptAuthCode(cfg AuthCodePromptConfig) AuthCodeResult {
 
 				if ok, _ := cfg.Validator(input); ok {
 					// Clear line and show success
-					fmt.Fprintf(tty, "\r\033[K")
-					fmt.Fprintf(tty, "%s Authorized\n\n", styled(successStyle, "✓"))
+					_, _ = fmt.Fprintf(tty, "\r\033[K")
+					_, _ = fmt.Fprintf(tty, "%s Authorized\n\n", styled(successStyle, "✓"))
 					return AuthCodeSuccess
 				}
 
 				// Invalid code
-				fmt.Fprintf(tty, "\r\033[K")
+				_, _ = fmt.Fprintf(tty, "\r\033[K")
 				if attempt < cfg.Attempts {
-					fmt.Fprintf(tty, "%s Invalid code\n", styled(errorStyle, "✗"))
+					_, _ = fmt.Fprintf(tty, "%s Invalid code\n", styled(errorStyle, "✗"))
 				}
 
 			case <-ticker.C:
 				remaining = time.Until(deadline)
 				if remaining <= 0 {
 					ticker.Stop()
-					fmt.Fprintf(tty, "\r\033[K")
-					fmt.Fprintf(tty, "\n%s Authorization expired\n", styled(errorStyle, "✗"))
+					_, _ = fmt.Fprintf(tty, "\r\033[K")
+					_, _ = fmt.Fprintf(tty, "\n%s Authorization expired\n", styled(errorStyle, "✗"))
 					return AuthCodeExpired
 				}
 
@@ -617,13 +617,13 @@ func PromptAuthCode(cfg AuthCodePromptConfig) AuthCodeResult {
 				// Only update if changed
 				if bar != lastBar {
 					// Save cursor, move to end of line, print bar, restore
-					fmt.Fprintf(tty, "\033[s\033[999C\033[%dD%s\033[u", len(bar), bar)
+					_, _ = fmt.Fprintf(tty, "\033[s\033[999C\033[%dD%s\033[u", len(bar), bar)
 					lastBar = bar
 				}
 			}
 		}
 	}
 
-	fmt.Fprintf(tty, "\n%s Authorization failed after %d attempts\n", styled(errorStyle, "✗"), cfg.Attempts)
+	_, _ = fmt.Fprintf(tty, "\n%s Authorization failed after %d attempts\n", styled(errorStyle, "✗"), cfg.Attempts)
 	return AuthCodeFailed
 }

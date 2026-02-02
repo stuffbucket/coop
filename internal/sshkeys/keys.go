@@ -147,14 +147,14 @@ func WriteSSHConfig(containerName, ip string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create lock file: %w", err)
 	}
-	defer lock.Close()
-	defer os.Remove(lockFile)
+	defer func() { _ = lock.Close() }()
+	defer func() { _ = os.Remove(lockFile) }()
 
 	// Acquire exclusive lock
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
 
 	// Read existing config and filter out old entry for this container
 	var filteredLines []string
