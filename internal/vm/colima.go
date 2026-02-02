@@ -226,9 +226,12 @@ func (c *ColimaBackend) Start() error {
 		cmd.Stdin = strings.NewReader("n\n")
 	}
 
-	err = cmd.Run()
-	log.CmdEnd("colima", err)
-	return err
+	if err = cmd.Run(); err != nil {
+		log.CmdEnd("colima", err)
+		return fmt.Errorf("failed to start colima VM %q: %w", profile, err)
+	}
+	log.CmdEnd("colima", nil)
+	return nil
 }
 
 func (c *ColimaBackend) Stop() error {
@@ -242,9 +245,12 @@ func (c *ColimaBackend) Stop() error {
 	cmd.Stdout = log.MultiWriter(os.Stdout)
 	cmd.Stderr = log.MultiWriter(os.Stderr)
 
-	err := cmd.Run()
-	log.CmdEnd("colima", err)
-	return err
+	if err := cmd.Run(); err != nil {
+		log.CmdEnd("colima", err)
+		return fmt.Errorf("failed to stop colima VM %q: %w", profile, err)
+	}
+	log.CmdEnd("colima", nil)
+	return nil
 }
 
 func (c *ColimaBackend) Delete() error {
@@ -258,9 +264,12 @@ func (c *ColimaBackend) Delete() error {
 	cmd.Stdout = log.MultiWriter(os.Stdout)
 	cmd.Stderr = log.MultiWriter(os.Stderr)
 
-	err := cmd.Run()
-	log.CmdEnd("colima", err)
-	return err
+	if err := cmd.Run(); err != nil {
+		log.CmdEnd("colima", err)
+		return fmt.Errorf("failed to delete colima VM %q: %w", profile, err)
+	}
+	log.CmdEnd("colima", nil)
+	return nil
 }
 
 func (c *ColimaBackend) Shell() error {
@@ -276,9 +285,12 @@ func (c *ColimaBackend) Shell() error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	err := cmd.Run()
-	log.CmdEnd("colima", err)
-	return err
+	if err := cmd.Run(); err != nil {
+		log.CmdEnd("colima", err)
+		return fmt.Errorf("failed to open shell in colima VM %q: %w", profile, err)
+	}
+	log.CmdEnd("colima", nil)
+	return nil
 }
 
 func (c *ColimaBackend) Exec(command []string) ([]byte, error) {
@@ -292,7 +304,10 @@ func (c *ColimaBackend) Exec(command []string) ([]byte, error) {
 	cmd := exec.Command("colima", args...)
 	output, err := cmd.Output()
 	log.CmdOutput("colima", output, err)
-	return output, err
+	if err != nil {
+		return nil, fmt.Errorf("failed to exec in colima VM %q: %w", profile, err)
+	}
+	return output, nil
 }
 
 func (c *ColimaBackend) GetIncusSocket() (string, error) {

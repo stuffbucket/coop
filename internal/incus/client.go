@@ -8,44 +8,30 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/stuffbucket/coop/internal/config"
-	"github.com/stuffbucket/coop/internal/vm"
 	incus "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/shared/api"
+	"github.com/stuffbucket/coop/internal/config"
+	"github.com/stuffbucket/coop/internal/platform"
+	"github.com/stuffbucket/coop/internal/vm"
 )
 
-// Platform represents the host platform type.
-type Platform int
+// Platform is an alias for platform.Type for backward compatibility.
+// Deprecated: Use platform.Type directly.
+type Platform = platform.Type
 
+// Platform constants for backward compatibility.
+// Deprecated: Use platform.Linux, platform.MacOS, etc. directly.
 const (
-	PlatformLinux Platform = iota
-	PlatformMacOS
-	PlatformWSL2
-	PlatformUnknown
+	PlatformLinux   = platform.Linux
+	PlatformMacOS   = platform.MacOS
+	PlatformWSL2    = platform.WSL2
+	PlatformUnknown = platform.Unknown
 )
 
 // DetectPlatform determines the current platform.
+// Deprecated: Use platform.Detect() directly.
 func DetectPlatform() Platform {
-	switch runtime.GOOS {
-	case "linux":
-		if isWSL() {
-			return PlatformWSL2
-		}
-		return PlatformLinux
-	case "darwin":
-		return PlatformMacOS
-	default:
-		return PlatformUnknown
-	}
-}
-
-func isWSL() bool {
-	data, err := os.ReadFile("/proc/version")
-	if err != nil {
-		return false
-	}
-	lower := strings.ToLower(string(data))
-	return strings.Contains(lower, "microsoft") || strings.Contains(lower, "wsl")
+	return platform.Detect()
 }
 
 // Client wraps the Incus API client with convenience methods.
@@ -56,6 +42,7 @@ type Client struct {
 }
 
 // Connect establishes a connection to the Incus daemon.
+// Deprecated: Use ConnectWithConfig for explicit dependency injection.
 func Connect() (*Client, error) {
 	cfg, err := config.Load()
 	if err != nil {

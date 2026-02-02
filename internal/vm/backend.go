@@ -2,11 +2,41 @@
 package vm
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
-	"runtime"
 
 	"github.com/stuffbucket/coop/internal/config"
+	"github.com/stuffbucket/coop/internal/platform"
+)
+
+// Sentinel errors for VM operations.
+var (
+	// ErrVMNotRunning indicates the VM is not in a running state.
+	ErrVMNotRunning = errors.New("VM is not running")
+
+	// ErrNoBackendAvailable indicates no VM backend could be found or used.
+	ErrNoBackendAvailable = errors.New("no VM backend available")
+
+	// ErrAutoStartDisabled indicates the VM is stopped and auto_start is disabled.
+	ErrAutoStartDisabled = errors.New("VM is not running and auto_start is disabled")
+)
+
+// Arch represents CPU architecture.
+type Arch string
+
+const (
+	ArchHost    Arch = "host"
+	ArchAArch64 Arch = "aarch64"
+	ArchX86_64  Arch = "x86_64"
+)
+
+// VMType represents the virtualization type.
+type VMType string
+
+const (
+	VMTypeVZ   VMType = "vz"    // Apple Virtualization.framework
+	VMTypeQEMU VMType = "qemu"  // QEMU emulation
 )
 
 // Backend represents a VM management backend.
@@ -72,7 +102,7 @@ func NewManager(cfg *config.Config) (*Manager, error) {
 	m := &Manager{cfg: cfg}
 
 	// Register available backends based on platform
-	if runtime.GOOS == "darwin" {
+	if platform.IsMacOS() {
 		m.backends = append(m.backends, NewColimaBackend(cfg))
 	}
 	// Lima works on macOS and Linux (including WSL2)
@@ -109,7 +139,7 @@ func (m *Manager) selectBackend() (Backend, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("no VM backend available (tried: colima, lima)")
+	return nil, fmt.Errorf("%w (tried: colima, lima)", ErrNoBackendAvailable)
 }
 
 // Backend returns the selected backend.
@@ -164,7 +194,7 @@ func (m *Manager) EnsureRunning() error {
 	}
 
 	if !m.cfg.Settings.VM.AutoStart {
-		return fmt.Errorf("VM is not running and auto_start is disabled")
+		return ErrAutoStartDisabled
 	}
 
 	return m.Start()
