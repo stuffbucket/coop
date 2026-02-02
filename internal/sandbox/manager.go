@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	securejoin "github.com/cyphar/filepath-securejoin"
 	"github.com/bsmi021/coop/internal/cloudinit"
 	"github.com/bsmi021/coop/internal/config"
 	"github.com/bsmi021/coop/internal/incus"
 	"github.com/bsmi021/coop/internal/names"
 	"github.com/bsmi021/coop/internal/sshkeys"
 	"github.com/bsmi021/coop/internal/ui"
+	securejoin "github.com/cyphar/filepath-securejoin"
 )
 
 const (
@@ -53,17 +53,23 @@ type Manager struct {
 }
 
 // NewManager creates a new sandbox manager.
+// Deprecated: Use NewManagerWithConfig for explicit dependency injection.
 func NewManager() (*Manager, error) {
-	client, err := incus.Connect()
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to incus: %w", err)
-	}
-
 	cfg, err := config.Load()
 	if err != nil {
 		// Use defaults if config doesn't exist
 		defaultCfg := config.DefaultConfig()
 		cfg = &defaultCfg
+	}
+	return NewManagerWithConfig(cfg)
+}
+
+// NewManagerWithConfig creates a new sandbox manager with the provided config.
+// This is the preferred constructor for explicit dependency injection.
+func NewManagerWithConfig(cfg *config.Config) (*Manager, error) {
+	client, err := incus.ConnectWithConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to incus: %w", err)
 	}
 
 	return &Manager{
