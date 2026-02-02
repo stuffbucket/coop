@@ -3,11 +3,13 @@
 package ui
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -503,4 +505,125 @@ func TTYPrint(format string, args ...interface{}) bool {
 	defer func() { _ = tty.Close() }()
 	_, _ = fmt.Fprintf(tty, format, args...)
 	return true
+}
+
+// AuthCodeResult represents the outcome of an auth code prompt.
+type AuthCodeResult int
+
+const (
+	// AuthCodeSuccess indicates the code was validated.
+	AuthCodeSuccess AuthCodeResult = iota
+	// AuthCodeExpired indicates the timeout was reached.
+	AuthCodeExpired
+	// AuthCodeFailed indicates all attempts were exhausted.
+	AuthCodeFailed
+	// AuthCodeError indicates a terminal error.
+	AuthCodeError
+)
+
+// AuthCodePromptConfig configures the auth code prompt.
+type AuthCodePromptConfig struct {
+	Reason     string                            // Why authorization is needed
+	Timeout    time.Duration                     // Total time allowed
+	Attempts   int                               // Max attempts
+	Validator  func(code string) (bool, error)   // Code validation function
+}
+
+// PromptAuthCode displays a countdown timer and prompts for an authorization code.
+// Uses direct TTY access to prevent stdout/stderr capture by subprocesses.
+func PromptAuthCode(cfg AuthCodePromptConfig) AuthCodeResult {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return AuthCodeError
+	}
+	defer func() { _ = tty.Close() }()
+
+	startTime := time.Now()
+	deadline := startTime.Add(cfg.Timeout)
+
+	// Initial display
+	fmt.Fprintf(tty, "\n⚠️  Protected path: %s\n", cfg.Reason)
+	fmt.Fprintf(tty, "A 6-digit authorization code is required.\n\n")
+
+	// Style definitions
+	barWidth := 20
+	remaining := cfg.Timeout
+
+	// Input channel
+	inputCh := make(chan string, 1)
+	go func() {
+		reader := bufio.NewReader(tty)
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				return
+			}
+			inputCh <- strings.TrimSpace(line)
+		}
+	}()
+
+	attempt := 0
+	for attempt < cfg.Attempts {
+		attempt++
+
+		// Update display with countdown
+		ticker := time.NewTicker(100 * time.Millisecond)
+		lastBar := ""
+
+		// Move cursor to show input area
+		fmt.Fprintf(tty, "Enter code (%d/%d attempts): ", attempt, cfg.Attempts)
+
+		inputReceived := false
+		for !inputReceived {
+			select {
+			case input := <-inputCh:
+				ticker.Stop()
+				inputReceived = true
+
+				if ok, _ := cfg.Validator(input); ok {
+					// Clear line and show success
+					fmt.Fprintf(tty, "\r\033[K")
+					fmt.Fprintf(tty, "%s Authorized\n\n", styled(successStyle, "✓"))
+					return AuthCodeSuccess
+				}
+
+				// Invalid code
+				fmt.Fprintf(tty, "\r\033[K")
+				if attempt < cfg.Attempts {
+					fmt.Fprintf(tty, "%s Invalid code\n", styled(errorStyle, "✗"))
+				}
+
+			case <-ticker.C:
+				remaining = time.Until(deadline)
+				if remaining <= 0 {
+					ticker.Stop()
+					fmt.Fprintf(tty, "\r\033[K")
+					fmt.Fprintf(tty, "\n%s Authorization expired\n", styled(errorStyle, "✗"))
+					return AuthCodeExpired
+				}
+
+				// Build progress bar
+				fraction := float64(remaining) / float64(cfg.Timeout)
+				filled := int(fraction * float64(barWidth))
+				if filled < 0 { filled = 0 }
+				if filled > barWidth { filled = barWidth }
+
+				secs := int(remaining.Seconds())
+				bar := fmt.Sprintf("[%s%s] %2ds",
+					strings.Repeat("█", filled),
+					strings.Repeat("░", barWidth-filled),
+					secs)
+
+				// Only update if changed
+				if bar != lastBar {
+					// Save cursor, move to end of line, print bar, restore
+					fmt.Fprintf(tty, "\033[s\033[999C\033[%dD%s\033[u", len(bar), bar)
+					lastBar = bar
+				}
+			}
+		}
+	}
+
+	fmt.Fprintf(tty, "\n%s Authorization failed after %d attempts\n", styled(errorStyle, "✗"), cfg.Attempts)
+	return AuthCodeFailed
 }

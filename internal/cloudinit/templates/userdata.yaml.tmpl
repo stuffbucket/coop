@@ -64,10 +64,6 @@ runcmd:
   - mkdir -p /home/agent/.bashrc.d /home/agent/.local/bin /home/agent/.config
   - mkdir -p /home/agent/.ssh /home/agent/.vscode-server /home/agent/workspace /home/agent/go/bin
   - chmod 700 /home/agent/.ssh
-{{- if .SSHPubKey }}
-  - 'echo "{{.SSHPubKey}}" > /home/agent/.ssh/authorized_keys'
-  - chmod 600 /home/agent/.ssh/authorized_keys
-{{- end }}
   - 'grep -q "bashrc.d" /home/agent/.bashrc || echo "for f in ~/.bashrc.d/*.sh; do [ -r \"$f\" ] && . \"$f\"; done" >> /home/agent/.bashrc'
   
   # Install Claude Code CLI for agent user (not in base image to reduce build memory)

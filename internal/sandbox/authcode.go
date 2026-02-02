@@ -22,6 +22,9 @@ const (
 	CodeWindow = 30 * time.Second
 	// CodeDigits is the number of digits in the authorization code.
 	CodeDigits = 6
+	// CodeValidity is the effective validity period (current + skew windows).
+	// With Skew=1, codes are valid for up to 90 seconds (prev + curr + next window).
+	CodeValidity = 90 * time.Second
 	// seatbeltKeyFile is where we persist the secret used for host-only TOTP.
 	seatbeltKeyFile = "seatbelt.key"
 )

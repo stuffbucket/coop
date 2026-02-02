@@ -834,59 +834,35 @@ func mountAddCmd(args []string) {
 			os.Exit(1)
 		}
 
-		// Generate code and send notification (code is NOT in the notification)
 		// Generate code (used for validation, not displayed in notification)
 		_, err := sandbox.CurrentAuthCode()
 		if err != nil {
 			ui.Errorf("Failed to generate authorization code: %v", err)
 			os.Exit(1)
 		}
-		codeGenTime := time.Now()
 		ui.NotifyWithSound("coop", "Protected Path", "Enter the auth code in your terminal", "Purr")
 
-		// Prompt via TTY (not stdout) - invisible to process capture
-		ui.TTYPrint("\n⚠️  Protected path: %s\n", reason)
-		ui.TTYPrint("A 6-digit authorization code is required (sent to this terminal).\n")
-		ui.TTYPrint("Enter code (3 attempts, expires in 30s): ")
+		// Use countdown prompt for auth code
+		result := ui.PromptAuthCode(ui.AuthCodePromptConfig{
+			Reason:   reason,
+			Timeout:  15 * time.Second,
+			Attempts: 3,
+			Validator: func(code string) (bool, error) {
+				return sandbox.ValidateAuthCode(code)
+			},
+		})
 
-		// Open TTY for reading
-		tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
-		if err != nil {
-			ui.Errorf("Cannot read from terminal: %v", err)
+		switch result {
+		case ui.AuthCodeSuccess:
+			forceAuthorized = true
+		case ui.AuthCodeExpired:
+			ui.Errorf("Authorization code expired")
 			os.Exit(1)
-		}
-		defer func() { _ = tty.Close() }()
-
-		// 3 attempts
-		for attempt := 1; attempt <= 3; attempt++ {
-			// Check if code has expired
-			if time.Since(codeGenTime) > 15*time.Second {
-				ui.TTYPrint("\n")
-				ui.Errorf("Authorization code expired")
-				os.Exit(1)
-			}
-
-			var input string
-			_, _ = fmt.Fscanln(tty, &input)
-			input = strings.TrimSpace(input)
-
-			if ok, _ := sandbox.ValidateAuthCode(input); ok {
-				forceAuthorized = true
-				ui.TTYPrint("✓ Authorized\n\n")
-				break
-			}
-
-			remaining := 3 - attempt
-			if remaining > 0 {
-				ui.TTYPrint("✗ Invalid code. %d attempt(s) remaining: ", remaining)
-			} else {
-				ui.TTYPrint("\n")
-				ui.Errorf("Authorization failed after 3 attempts")
-				os.Exit(1)
-			}
-		}
-
-		if !forceAuthorized {
+		case ui.AuthCodeFailed:
+			ui.Errorf("Authorization failed after 3 attempts")
+			os.Exit(1)
+		case ui.AuthCodeError:
+			ui.Errorf("Cannot read from terminal")
 			os.Exit(1)
 		}
 

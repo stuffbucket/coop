@@ -12,7 +12,7 @@ func TestGetSensitiveHomeDirs(t *testing.T) {
 	dirs := getSensitiveHomeDirs()
 
 	// Common dirs should always be present
-	commonExpected := []string{".ssh", ".gnupg", ".aws", ".config/coop"}
+	commonExpected := []string{".ssh", ".gnupg", ".aws", ".config/coop", "Desktop", "Documents", "Downloads"}
 	for _, expected := range commonExpected {
 		found := false
 		for _, d := range dirs {
@@ -94,6 +94,21 @@ func TestIsSeatbelted_CommonPaths(t *testing.T) {
 		{
 			name:      "gnupg",
 			path:      filepath.Join(home, ".gnupg"),
+			wantBlock: true,
+		},
+		{
+			name:      "Desktop",
+			path:      filepath.Join(home, "Desktop"),
+			wantBlock: true,
+		},
+		{
+			name:      "Documents",
+			path:      filepath.Join(home, "Documents"),
+			wantBlock: true,
+		},
+		{
+			name:      "Downloads",
+			path:      filepath.Join(home, "Downloads"),
 			wantBlock: true,
 		},
 		{
@@ -187,9 +202,9 @@ func TestIsSeatbelted_LinuxSpecific(t *testing.T) {
 }
 
 func TestExpandPath(t *testing.T) {
-	home := os.Getenv("HOME")
-	if home == "" {
-		t.Skip("HOME not set")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("UserHomeDir not available")
 	}
 
 	tests := []struct {
@@ -197,8 +212,8 @@ func TestExpandPath(t *testing.T) {
 		want  string
 	}{
 		{"~", home},
-		{"~/foo", home + "/foo"},
-		{"~/foo/bar", home + "/foo/bar"},
+		{"~/foo", filepath.Join(home, "foo")},
+		{"~/foo/bar", filepath.Join(home, "foo", "bar")},
 		{"/absolute/path", "/absolute/path"},
 		{"relative/path", "relative/path"},
 		{"", ""},

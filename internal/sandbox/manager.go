@@ -813,6 +813,9 @@ var commonSensitiveDirs = []string{
 	".openai",          // OpenAI API keys
 	".config",          // Parent of coop config
 	".config/coop",     // Coop trust root (hard block)
+	"Desktop",          // Personal files
+	"Documents",        // Personal documents
+	"Downloads",        // Downloaded files, potential malware vector
 }
 
 // macOSSensitiveDirs are macOS-specific credential directories.
@@ -901,32 +904,28 @@ func detectWindowsUsername() string {
 	return ""
 }
 
-// expandPath expands ~ and ~user to absolute paths.
+// expandPath expands ~ to the current user's home directory.
+// Note: ~user paths (other than ~/) are NOT expanded for security reasons.
 func expandPath(path string) string {
 	if path == "" {
 		return path
 	}
 
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+
 	if path == "~" {
-		return os.Getenv("HOME")
+		return home
 	}
 
 	if strings.HasPrefix(path, "~/") {
-		return os.Getenv("HOME") + path[1:]
+		return filepath.Join(home, path[2:])
 	}
 
-	// Handle ~user format (rare but possible)
-	if strings.HasPrefix(path, "~") {
-		// Find the end of username
-		slash := strings.Index(path, "/")
-		if slash == -1 {
-			slash = len(path)
-		}
-		// For simplicity, just expand to current user's home
-		// A more complete impl would look up the user
-		return os.Getenv("HOME") + path[slash:]
-	}
-
+	// Do NOT expand ~user paths - this could bypass seatbelt protection
+	// by expanding ~root/.ssh to something other than $HOME/.ssh
 	return path
 }
 
@@ -951,7 +950,7 @@ func IsSeatbelted(path string) (bool, string) {
 	}
 
 	// Check user home directory sensitive paths
-	home := os.Getenv("HOME")
+	home, _ := os.UserHomeDir()
 	if home != "" {
 		for _, dir := range getSensitiveHomeDirs() {
 			protected := filepath.Join(home, dir)
