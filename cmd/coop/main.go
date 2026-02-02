@@ -22,7 +22,7 @@ import (
 func main() {
 	// Initialize logging early
 	initLogging()
-	defer logging.Close()
+	defer func() { _ = logging.Close() }()
 
 	if len(os.Args) < 2 {
 		printUsage()
@@ -900,7 +900,7 @@ func mountAddCmd(args []string) {
 			ui.Errorf("Cannot read from terminal: %v", err)
 			os.Exit(1)
 		}
-		defer tty.Close()
+		defer func() { _ = tty.Close() }()
 
 		// 3 attempts
 		for attempt := 1; attempt <= 3; attempt++ {

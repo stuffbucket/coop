@@ -36,20 +36,10 @@ func TestGetDirectories(t *testing.T) {
 }
 
 func TestGetDirectoriesEnvOverride(t *testing.T) {
-	// Save original env
-	origConfig := os.Getenv("COOP_CONFIG_DIR")
-	origData := os.Getenv("COOP_DATA_DIR")
-	origCache := os.Getenv("COOP_CACHE_DIR")
-	defer func() {
-		os.Setenv("COOP_CONFIG_DIR", origConfig)
-		os.Setenv("COOP_DATA_DIR", origData)
-		os.Setenv("COOP_CACHE_DIR", origCache)
-	}()
-
-	// Set custom dirs
-	os.Setenv("COOP_CONFIG_DIR", "/tmp/test-config")
-	os.Setenv("COOP_DATA_DIR", "/tmp/test-data")
-	os.Setenv("COOP_CACHE_DIR", "/tmp/test-cache")
+	// Set custom dirs (t.Setenv handles cleanup)
+	t.Setenv("COOP_CONFIG_DIR", "/tmp/test-config")
+	t.Setenv("COOP_DATA_DIR", "/tmp/test-data")
+	t.Setenv("COOP_CACHE_DIR", "/tmp/test-cache")
 
 	dirs := GetDirectories()
 
@@ -65,29 +55,15 @@ func TestGetDirectoriesEnvOverride(t *testing.T) {
 }
 
 func TestGetDirectoriesXDGOverride(t *testing.T) {
-	// Save original env
-	origConfig := os.Getenv("COOP_CONFIG_DIR")
-	origData := os.Getenv("COOP_DATA_DIR")
-	origCache := os.Getenv("COOP_CACHE_DIR")
-	origXDGConfig := os.Getenv("XDG_CONFIG_HOME")
-	origXDGData := os.Getenv("XDG_DATA_HOME")
-	origXDGCache := os.Getenv("XDG_CACHE_HOME")
-	defer func() {
-		os.Setenv("COOP_CONFIG_DIR", origConfig)
-		os.Setenv("COOP_DATA_DIR", origData)
-		os.Setenv("COOP_CACHE_DIR", origCache)
-		os.Setenv("XDG_CONFIG_HOME", origXDGConfig)
-		os.Setenv("XDG_DATA_HOME", origXDGData)
-		os.Setenv("XDG_CACHE_HOME", origXDGCache)
-	}()
+	// Clear COOP_* vars by setting empty (t.Setenv handles cleanup)
+	t.Setenv("COOP_CONFIG_DIR", "")
+	t.Setenv("COOP_DATA_DIR", "")
+	t.Setenv("COOP_CACHE_DIR", "")
 
-	// Clear COOP_* vars, set XDG vars
-	os.Unsetenv("COOP_CONFIG_DIR")
-	os.Unsetenv("COOP_DATA_DIR")
-	os.Unsetenv("COOP_CACHE_DIR")
-	os.Setenv("XDG_CONFIG_HOME", "/tmp/xdg-config")
-	os.Setenv("XDG_DATA_HOME", "/tmp/xdg-data")
-	os.Setenv("XDG_CACHE_HOME", "/tmp/xdg-cache")
+	// Set XDG vars
+	t.Setenv("XDG_CONFIG_HOME", "/tmp/xdg-config")
+	t.Setenv("XDG_DATA_HOME", "/tmp/xdg-data")
+	t.Setenv("XDG_CACHE_HOME", "/tmp/xdg-cache")
 
 	dirs := GetDirectories()
 
@@ -105,9 +81,7 @@ func TestGetDirectoriesXDGOverride(t *testing.T) {
 func TestLoadDefaults(t *testing.T) {
 	// Use temp directory to avoid loading real settings
 	tmpDir := t.TempDir()
-	origConfig := os.Getenv("COOP_CONFIG_DIR")
-	defer os.Setenv("COOP_CONFIG_DIR", origConfig)
-	os.Setenv("COOP_CONFIG_DIR", tmpDir)
+	t.Setenv("COOP_CONFIG_DIR", tmpDir)
 
 	cfg, err := Load()
 	if err != nil {
@@ -155,18 +129,9 @@ func TestLoadDefaults(t *testing.T) {
 
 func TestLoadEnvOverrides(t *testing.T) {
 	tmpDir := t.TempDir()
-	origConfig := os.Getenv("COOP_CONFIG_DIR")
-	origImage := os.Getenv("COOP_DEFAULT_IMAGE")
-	origVMBackend := os.Getenv("COOP_VM_BACKEND")
-	defer func() {
-		os.Setenv("COOP_CONFIG_DIR", origConfig)
-		os.Setenv("COOP_DEFAULT_IMAGE", origImage)
-		os.Setenv("COOP_VM_BACKEND", origVMBackend)
-	}()
-
-	os.Setenv("COOP_CONFIG_DIR", tmpDir)
-	os.Setenv("COOP_DEFAULT_IMAGE", "custom-image")
-	os.Setenv("COOP_VM_BACKEND", "lima")
+	t.Setenv("COOP_CONFIG_DIR", tmpDir)
+	t.Setenv("COOP_DEFAULT_IMAGE", "custom-image")
+	t.Setenv("COOP_VM_BACKEND", "lima")
 
 	cfg, err := Load()
 	if err != nil {
@@ -183,18 +148,9 @@ func TestLoadEnvOverrides(t *testing.T) {
 
 func TestEnsureDirectories(t *testing.T) {
 	tmpDir := t.TempDir()
-	origConfig := os.Getenv("COOP_CONFIG_DIR")
-	origData := os.Getenv("COOP_DATA_DIR")
-	origCache := os.Getenv("COOP_CACHE_DIR")
-	defer func() {
-		os.Setenv("COOP_CONFIG_DIR", origConfig)
-		os.Setenv("COOP_DATA_DIR", origData)
-		os.Setenv("COOP_CACHE_DIR", origCache)
-	}()
-
-	os.Setenv("COOP_CONFIG_DIR", filepath.Join(tmpDir, "config"))
-	os.Setenv("COOP_DATA_DIR", filepath.Join(tmpDir, "data"))
-	os.Setenv("COOP_CACHE_DIR", filepath.Join(tmpDir, "cache"))
+	t.Setenv("COOP_CONFIG_DIR", filepath.Join(tmpDir, "config"))
+	t.Setenv("COOP_DATA_DIR", filepath.Join(tmpDir, "data"))
+	t.Setenv("COOP_CACHE_DIR", filepath.Join(tmpDir, "cache"))
 
 	err := EnsureDirectories()
 	if err != nil {
@@ -238,9 +194,7 @@ func TestEnsureDirectories(t *testing.T) {
 
 func TestSaveAndLoad(t *testing.T) {
 	tmpDir := t.TempDir()
-	origConfig := os.Getenv("COOP_CONFIG_DIR")
-	defer os.Setenv("COOP_CONFIG_DIR", origConfig)
-	os.Setenv("COOP_CONFIG_DIR", tmpDir)
+	t.Setenv("COOP_CONFIG_DIR", tmpDir)
 
 	// Create initial config
 	cfg := &Config{
