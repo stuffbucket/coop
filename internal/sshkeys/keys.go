@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bsmi021/coop/internal/config"
+	"github.com/stuffbucket/coop/internal/config"
 	"golang.org/x/crypto/ssh"
 )
 
