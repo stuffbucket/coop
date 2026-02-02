@@ -14,6 +14,7 @@ import (
 	"github.com/stuffbucket/coop/internal/config"
 	"github.com/stuffbucket/coop/internal/incus"
 	"github.com/stuffbucket/coop/internal/names"
+	"github.com/stuffbucket/coop/internal/platform"
 	"github.com/stuffbucket/coop/internal/sshkeys"
 	"github.com/stuffbucket/coop/internal/ui"
 	securejoin "github.com/cyphar/filepath-securejoin"
@@ -794,28 +795,110 @@ var sipProtectedPaths = []string{
 	"/private/var",
 }
 
-// sensitiveHomeDirs are user directories containing credentials, keys, or sensitive config.
-var sensitiveHomeDirs = []string{
+// commonSensitiveDirs are credential directories shared across all platforms.
+var commonSensitiveDirs = []string{
+	".ssh",             // SSH keys
+	".gnupg",           // GPG keys
+	".aws",             // AWS credentials
+	".azure",           // Azure credentials
+	".config/gcloud",   // GCP credentials
+	".kube",            // Kubernetes config
+	".docker",          // Docker config and creds
+	".npmrc",           // npm tokens (file)
+	".netrc",           // Generic credential file
+	".gitconfig",       // May contain credentials
+	".git-credentials", // Git credential storage
+	".config/gh",       // GitHub CLI tokens
+	".anthropic",       // Anthropic API keys
+	".openai",          // OpenAI API keys
+	".config",          // Parent of coop config
+	".config/coop",     // Coop trust root (hard block)
+}
+
+// macOSSensitiveDirs are macOS-specific credential directories.
+var macOSSensitiveDirs = []string{
 	"Library",                                // Keychains, app data, cookies
 	"Library/Keychains",                      // macOS keychain files
 	"Library/Cookies",                        // Browser cookies
 	"Library/Application Support/MobileSync", // iOS backups
-	".ssh",                                   // SSH keys
-	".gnupg",                                 // GPG keys
-	".aws",                                   // AWS credentials
-	".azure",                                 // Azure credentials
-	".config/gcloud",                         // GCP credentials
-	".kube",                                  // Kubernetes config
-	".docker",                                // Docker config and creds
-	".npmrc",                                 // npm tokens (file)
-	".netrc",                                 // Generic credential file
-	".gitconfig",                             // May contain credentials
-	".git-credentials",                       // Git credential storage
-	".config/gh",                             // GitHub CLI tokens
-	".anthropic",                             // Anthropic API keys
-	".openai",                                // OpenAI API keys
-	".config",                                // Parent of coop config
-	".config/coop",                           // Coop trust root (hard block)
+}
+
+// linuxSensitiveDirs are Linux-specific credential directories.
+var linuxSensitiveDirs = []string{
+	".local/share/keyrings", // GNOME Keyring storage
+	".pki",                  // NSS certificate database
+	".password-store",       // pass password manager
+	".local/share/kwalletd", // KDE Wallet
+}
+
+// getSensitiveHomeDirs returns the sensitive directories for the current platform.
+func getSensitiveHomeDirs() []string {
+	dirs := make([]string, 0, len(commonSensitiveDirs)+10)
+	dirs = append(dirs, commonSensitiveDirs...)
+
+	switch platform.Detect() {
+	case platform.MacOS:
+		dirs = append(dirs, macOSSensitiveDirs...)
+	case platform.Linux:
+		dirs = append(dirs, linuxSensitiveDirs...)
+	case platform.WSL2:
+		dirs = append(dirs, linuxSensitiveDirs...)
+		// WSL2 absolute paths are handled separately in IsSeatbelted
+	}
+	return dirs
+}
+
+// getWSL2SensitivePaths returns Windows-side sensitive paths accessible from WSL2.
+func getWSL2SensitivePaths() []string {
+	winUser := detectWindowsUsername()
+	if winUser == "" {
+		return nil
+	}
+
+	winHome := "/mnt/c/Users/" + winUser
+	return []string{
+		winHome + "/.ssh",
+		winHome + "/.aws",
+		winHome + "/.azure",
+		winHome + "/.kube",
+		winHome + "/.docker",
+		winHome + "/AppData/Roaming",         // Windows credential managers
+		winHome + "/AppData/Local/Microsoft", // Windows auth data
+	}
+}
+
+// detectWindowsUsername attempts to find the Windows username from WSL2.
+func detectWindowsUsername() string {
+	// Try WSLENV-provided path
+	if userprofile := os.Getenv("USERPROFILE"); userprofile != "" {
+		// USERPROFILE might be like C:\Users\brian
+		parts := strings.Split(userprofile, "\\")
+		if len(parts) >= 3 {
+			return parts[len(parts)-1]
+		}
+	}
+
+	// Try wslpath if available
+	if output, err := exec.Command("wslvar", "USERNAME").Output(); err == nil {
+		return strings.TrimSpace(string(output))
+	}
+
+	// Fallback: check /mnt/c/Users for non-system directories
+	entries, err := os.ReadDir("/mnt/c/Users")
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		name := e.Name()
+		// Skip system accounts
+		if name == "Public" || name == "Default" || name == "Default User" || name == "All Users" {
+			continue
+		}
+		if e.IsDir() {
+			return name
+		}
+	}
+	return ""
 }
 
 // expandPath expands ~ and ~user to absolute paths.
@@ -858,17 +941,19 @@ func IsSeatbelted(path string) (bool, string) {
 	}
 	expanded = filepath.Clean(expanded)
 
-	// Check SIP-protected system directories
-	for _, prefix := range sipProtectedPaths {
-		if expanded == prefix || strings.HasPrefix(expanded, prefix+"/") {
-			return true, fmt.Sprintf("%s is protected by System Integrity Protection", prefix)
+	// Check SIP-protected system directories (macOS only)
+	if platform.Detect() == platform.MacOS {
+		for _, prefix := range sipProtectedPaths {
+			if expanded == prefix || strings.HasPrefix(expanded, prefix+"/") {
+				return true, fmt.Sprintf("%s is protected by System Integrity Protection", prefix)
+			}
 		}
 	}
 
 	// Check user home directory sensitive paths
 	home := os.Getenv("HOME")
 	if home != "" {
-		for _, dir := range sensitiveHomeDirs {
+		for _, dir := range getSensitiveHomeDirs() {
 			protected := filepath.Join(home, dir)
 			if pathContains(protected, expanded) || pathContains(expanded, protected) {
 				// Hard block for coop trust root
@@ -876,6 +961,15 @@ func IsSeatbelted(path string) (bool, string) {
 					return true, fmt.Sprintf("~/%s is a protected Coop path and cannot be mounted", dir)
 				}
 				return true, fmt.Sprintf("~/%s contains sensitive data (credentials, keys, tokens)", dir)
+			}
+		}
+	}
+
+	// Check WSL2-specific Windows paths
+	if platform.Detect() == platform.WSL2 {
+		for _, wslPath := range getWSL2SensitivePaths() {
+			if pathContains(wslPath, expanded) || pathContains(expanded, wslPath) {
+				return true, fmt.Sprintf("%s contains Windows credentials", wslPath)
 			}
 		}
 	}
