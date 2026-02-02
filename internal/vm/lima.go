@@ -135,9 +135,12 @@ func (l *LimaBackend) Start() error {
 	cmd.Stdout = log.MultiWriter(os.Stdout)
 	cmd.Stderr = log.MultiWriter(os.Stderr)
 
-	err = cmd.Run()
-	log.CmdEnd("limactl", err)
-	return err
+	if err = cmd.Run(); err != nil {
+		log.CmdEnd("limactl", err)
+		return fmt.Errorf("failed to start lima VM %q: %w", name, err)
+	}
+	log.CmdEnd("limactl", nil)
+	return nil
 }
 
 func (l *LimaBackend) findTemplate() string {
@@ -181,9 +184,12 @@ func (l *LimaBackend) Stop() error {
 	cmd.Stdout = log.MultiWriter(os.Stdout)
 	cmd.Stderr = log.MultiWriter(os.Stderr)
 
-	err := cmd.Run()
-	log.CmdEnd("limactl", err)
-	return err
+	if err := cmd.Run(); err != nil {
+		log.CmdEnd("limactl", err)
+		return fmt.Errorf("failed to stop lima VM %q: %w", name, err)
+	}
+	log.CmdEnd("limactl", nil)
+	return nil
 }
 
 func (l *LimaBackend) Delete() error {
@@ -197,9 +203,12 @@ func (l *LimaBackend) Delete() error {
 	cmd.Stdout = log.MultiWriter(os.Stdout)
 	cmd.Stderr = log.MultiWriter(os.Stderr)
 
-	err := cmd.Run()
-	log.CmdEnd("limactl", err)
-	return err
+	if err := cmd.Run(); err != nil {
+		log.CmdEnd("limactl", err)
+		return fmt.Errorf("failed to delete lima VM %q: %w", name, err)
+	}
+	log.CmdEnd("limactl", nil)
+	return nil
 }
 
 func (l *LimaBackend) Shell() error {
@@ -214,9 +223,12 @@ func (l *LimaBackend) Shell() error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	err := cmd.Run()
-	log.CmdEnd("limactl", err)
-	return err
+	if err := cmd.Run(); err != nil {
+		log.CmdEnd("limactl", err)
+		return fmt.Errorf("failed to open shell in lima VM %q: %w", name, err)
+	}
+	log.CmdEnd("limactl", nil)
+	return nil
 }
 
 func (l *LimaBackend) Exec(command []string) ([]byte, error) {
@@ -229,7 +241,10 @@ func (l *LimaBackend) Exec(command []string) ([]byte, error) {
 	cmd := exec.Command("limactl", args...)
 	output, err := cmd.Output()
 	log.CmdOutput("limactl", output, err)
-	return output, err
+	if err != nil {
+		return nil, fmt.Errorf("failed to exec in lima VM %q: %w", name, err)
+	}
+	return output, nil
 }
 
 func (l *LimaBackend) GetIncusSocket() (string, error) {
