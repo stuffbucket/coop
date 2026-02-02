@@ -151,6 +151,17 @@ func printUsage() {
 	fmt.Println(ui.HelpExample("coop image build"))
 }
 
+// mustManager creates a new sandbox.Manager or exits with an error.
+// This centralizes the repeated pattern of creating a manager and handling errors.
+func mustManager() *sandbox.Manager {
+	mgr, err := sandbox.NewManager()
+	if err != nil {
+		ui.Errorf("Error: %v", err)
+		os.Exit(1)
+	}
+	return mgr
+}
+
 func initCmd(args []string) {
 	ui.Print(ui.Bold("Initializing coop..."))
 
@@ -199,11 +210,7 @@ func createCmd(args []string) {
 		name = fs.Arg(0)
 	}
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	cfg := sandbox.DefaultContainerConfig(name)
 	cfg.CPUs = *cpus
@@ -246,11 +253,7 @@ func startCmd(args []string) {
 
 	name := args[0]
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	ui.Printf("Starting container %s...\n", ui.Name(name))
 	if err := mgr.Start(name); err != nil {
@@ -281,11 +284,7 @@ func stopCmd(args []string) {
 
 	name := fs.Arg(0)
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	ui.Printf("Stopping container %s...\n", ui.Name(name))
 	if err := mgr.Stop(name, *force); err != nil {
@@ -305,11 +304,7 @@ func lockCmd(args []string) {
 
 	name := args[0]
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	ui.Printf("Locking container %s...\n", ui.Name(name))
 	if err := mgr.Lock(name); err != nil {
@@ -329,11 +324,7 @@ func unlockCmd(args []string) {
 
 	name := args[0]
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	ui.Printf("Unlocking container %s...\n", ui.Name(name))
 	if err := mgr.Unlock(name); err != nil {
@@ -358,11 +349,7 @@ func logsCmd(args []string) {
 
 	name := fs.Arg(0)
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	if err := mgr.Logs(name, *follow, *lines); err != nil {
 		ui.Errorf("Error: %v", err)
@@ -383,11 +370,7 @@ func deleteCmd(args []string) {
 
 	name := fs.Arg(0)
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	if err := mgr.Delete(name, *force); err != nil {
 		ui.Errorf("Error deleting container: %v", err)
@@ -396,11 +379,7 @@ func deleteCmd(args []string) {
 }
 
 func listCmd(args []string) {
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	containers, err := mgr.List()
 	if err != nil {
@@ -476,11 +455,7 @@ func statusCmd(args []string) {
 
 	name := args[0]
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	status, err := mgr.Status(name)
 	if err != nil {
@@ -516,11 +491,7 @@ func sshCmd(args []string) {
 
 	name := args[0]
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	cmd, err := mgr.SSH(name)
 	if err != nil {
@@ -541,11 +512,7 @@ func shellCmd(args []string) {
 	name := args[0]
 	remoteCmd := args[1:] // Extra args become remote command
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	sshArgs, err := mgr.SSHArgs(name)
 	if err != nil {
@@ -584,11 +551,7 @@ func execCmd(args []string) {
 	name := args[0]
 	command := args[1:]
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	exitCode, err := mgr.Exec(name, command)
 	if err != nil {
@@ -699,11 +662,7 @@ func snapshotCreateCmd(args []string) {
 	container := args[0]
 	snapshotName := args[1]
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	ui.Printf("Creating snapshot %s of %s...\n", ui.Name(snapshotName), ui.Name(container))
 	if err := mgr.CreateSnapshot(container, snapshotName); err != nil {
@@ -724,11 +683,7 @@ func snapshotRestoreCmd(args []string) {
 	container := args[0]
 	snapshotName := args[1]
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	ui.Printf("Restoring %s to snapshot %s...\n", ui.Name(container), ui.Name(snapshotName))
 	if err := mgr.RestoreSnapshot(container, snapshotName); err != nil {
@@ -748,11 +703,7 @@ func snapshotListCmd(args []string) {
 
 	container := args[0]
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	snapshots, err := mgr.ListSnapshots(container)
 	if err != nil {
@@ -788,11 +739,7 @@ func snapshotDeleteCmd(args []string) {
 	container := args[0]
 	snapshotName := args[1]
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	ui.Printf("Deleting snapshot %s from %s...\n", ui.Name(snapshotName), ui.Name(container))
 	if err := mgr.DeleteSnapshot(container, snapshotName); err != nil {
@@ -938,11 +885,7 @@ func mountAddCmd(args []string) {
 		ui.Warnf("Mounting protected path: %s", source)
 	}
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	ui.Printf("Mounting %s to %s as %s...\n", ui.Path(source), ui.Path(mountPath), ui.Name(mountName))
 	if err := mgr.Mount(container, mountName, source, mountPath, *readonly, forceAuthorized); err != nil {
@@ -967,11 +910,7 @@ func mountRemoveCmd(args []string) {
 	container := args[0]
 	mountName := args[1]
 
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	ui.Printf("Removing mount %s from %s...\n", ui.Name(mountName), ui.Name(container))
 	if err := mgr.Unmount(container, mountName); err != nil {
@@ -983,11 +922,7 @@ func mountRemoveCmd(args []string) {
 }
 
 func mountListCmd(args []string) {
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	// If container specified, show just that one
 	if len(args) >= 1 {
@@ -1258,11 +1193,7 @@ func imageBuildCmd(args []string) {
 }
 
 func imageListCmd(args []string) {
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	// Get socket path from VM backend to pass to incus CLI
 	cfg, _ := config.Load()
@@ -1351,11 +1282,7 @@ func imageExistsCmd(args []string) {
 	}
 
 	alias := args[0]
-	mgr, err := sandbox.NewManager()
-	if err != nil {
-		ui.Errorf("Error: %v", err)
-		os.Exit(1)
-	}
+	mgr := mustManager()
 
 	if mgr.ImageExists(alias) {
 		ui.Successf("Image %s exists", ui.Name(alias))
