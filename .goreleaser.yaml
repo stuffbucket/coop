@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+
+version: 2
+
+project_name: coop
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: coop
+    main: ./cmd/coop
+    binary: coop
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+    flags:
+      - -trimpath
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "arm64" }}aarch64
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - README.md
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Other
+      order: 999
+
+release:
+  github:
+    owner: stuffbucket
+    name: coop
+  draft: false
+  prerelease: auto
+  name_template: "{{.ProjectName}} v{{.Version}}"
+  header: |
+    ## coop v{{.Version}}
+    
+    AI agent container management with security sandboxing.
+    
+    ### Installation
+    
+    **Homebrew (macOS):**
+    ```bash
+    brew install stuffbucket/tap/coop
+    ```
+    
+    **Manual download:** See assets below.
+
+# Homebrew tap configuration
+# Requires HOMEBREW_TAP_TOKEN secret with write access to stuffbucket/homebrew-tap
+brews:
+  - name: coop
+    ids:
+      - default
+    repository:
+      owner: stuffbucket
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/stuffbucket/coop"
+    description: "AI agent container management with security sandboxing"
+    license: "MIT"
+    # Skip if token not available (local builds)
+    skip_upload: auto
+    install: |
+      bin.install "coop"
+    test: |
+      system bin/"coop", "--help"

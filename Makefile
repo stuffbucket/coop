@@ -1,4 +1,4 @@
-.PHONY: build test lint vuln vuln-go clean all check go-version ci ci-all act act-build act-lint hooks
+.PHONY: build test lint vuln vuln-go clean all check go-version ci ci-all act act-build act-lint hooks release release-dry-run
 
 # Build settings
 BINARY := coop
@@ -83,24 +83,24 @@ ACT_WORKTREE_OPTS := $(shell \
 # CI target - runs build job only (fast, always works)
 ci:
 	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
-	act push -j build $(ACT_WORKTREE_OPTS)
+	act push -j build -W .github/workflows/ci.yml $(ACT_WORKTREE_OPTS)
 
 # Full CI - runs all jobs (lint/security are informational)
 ci-all: act
 
 act:
 	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
-	act push $(ACT_WORKTREE_OPTS)
+	act push -W .github/workflows/ci.yml $(ACT_WORKTREE_OPTS)
 
 # Run only the build job
 act-build:
 	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
-	act push -j build $(ACT_WORKTREE_OPTS)
+	act push -j build -W .github/workflows/ci.yml $(ACT_WORKTREE_OPTS)
 
 # Run only the lint job
 act-lint:
 	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
-	act push -j lint $(ACT_WORKTREE_OPTS)
+	act push -j lint -W .github/workflows/ci.yml $(ACT_WORKTREE_OPTS)
 
 # Install git pre-push hook (runs act before every push)
 hooks:
@@ -122,3 +122,19 @@ hooks:
 	@echo 'fi' >> .git/hooks/commit-msg
 	@chmod +x .git/hooks/commit-msg
 	@echo "Installed pre-push and commit-msg hooks"
+
+# Release targets (requires goreleaser: brew install goreleaser)
+# Test release locally without publishing
+release-dry-run:
+	@command -v goreleaser >/dev/null 2>&1 || { echo "Install goreleaser: brew install goreleaser"; exit 1; }
+	goreleaser release --snapshot --clean
+
+# Create a new release (tags and pushes, GitHub Actions runs goreleaser)
+# Usage: make release VERSION=v0.1.0
+release:
+	@if [ -z "$(VERSION)" ]; then echo "Usage: make release VERSION=v0.1.0"; exit 1; fi
+	@echo "Creating release $(VERSION)..."
+	git tag -a $(VERSION) -m "Release $(VERSION)"
+	git push origin $(VERSION)
+	@echo "Release $(VERSION) tagged and pushed."
+	@echo "GitHub Actions will run goreleaser to build binaries and update homebrew-tap."

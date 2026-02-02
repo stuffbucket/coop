@@ -523,10 +523,10 @@ const (
 
 // AuthCodePromptConfig configures the auth code prompt.
 type AuthCodePromptConfig struct {
-	Reason     string                            // Why authorization is needed
-	Timeout    time.Duration                     // Total time allowed
-	Attempts   int                               // Max attempts
-	Validator  func(code string) (bool, error)   // Code validation function
+	Reason    string                          // Why authorization is needed
+	Timeout   time.Duration                   // Total time allowed
+	Attempts  int                             // Max attempts
+	Validator func(code string) (bool, error) // Code validation function
 }
 
 // PromptAuthCode displays a countdown timer and prompts for an authorization code.
@@ -605,8 +605,12 @@ func PromptAuthCode(cfg AuthCodePromptConfig) AuthCodeResult {
 				// Build progress bar
 				fraction := float64(remaining) / float64(cfg.Timeout)
 				filled := int(fraction * float64(barWidth))
-				if filled < 0 { filled = 0 }
-				if filled > barWidth { filled = barWidth }
+				if filled < 0 {
+					filled = 0
+				}
+				if filled > barWidth {
+					filled = barWidth
+				}
 
 				secs := int(remaining.Seconds())
 				bar := fmt.Sprintf("[%s%s] %2ds",
