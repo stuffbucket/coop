@@ -1,140 +1,38 @@
-.PHONY: build test lint vuln vuln-go clean all check go-version ci ci-all act act-build act-lint hooks release release-dry-run
+.PHONY: all build test lint vuln clean release
 
-# Build settings
 BINARY := coop
 GO := go
 GOFLAGS := -trimpath -ldflags="-s -w"
 
-# Detect installed Go version (e.g., "1.25.6")
-GO_VERSION := $(shell $(GO) version | sed -E 's/go version go([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/')
-
-# Default target
-all: check build
+# Default: lint, test, build
+all: lint test build
 
 # Build the binary
 build:
 	$(GO) build $(GOFLAGS) -o $(BINARY) ./cmd/coop
 
-# Run tests
+# Run tests with race detector
 test:
 	$(GO) test -race -cover ./...
 
-# Lint with staticcheck (install: brew install staticcheck)
+# Lint with staticcheck
 lint:
-	@command -v staticcheck >/dev/null 2>&1 || { echo "Install staticcheck: brew install staticcheck"; exit 1; }
+	@command -v staticcheck >/dev/null 2>&1 || { echo "Install: brew install staticcheck"; exit 1; }
 	staticcheck ./...
 
-# Go-specific vulnerability scan with call graph analysis (install: brew install govulncheck)
-# This is more precise - only reports CVEs in code paths you actually use
-vuln-go:
-	@command -v govulncheck >/dev/null 2>&1 || { echo "Install govulncheck: brew install govulncheck"; exit 1; }
+# Vulnerability scan (govulncheck)
+vuln:
+	@command -v govulncheck >/dev/null 2>&1 || { echo "Install: brew install govulncheck"; exit 1; }
 	govulncheck ./...
-
-# Broad vulnerability scan (install: brew install trivy)
-# Covers Go deps, containers, IaC, secrets, etc
-vuln-trivy:
-	@command -v trivy >/dev/null 2>&1 || { echo "Install trivy: brew install trivy"; exit 1; }
-	trivy fs --scanners vuln --exit-code 0 .
-
-# Combined vulnerability scan - run both tools
-vuln: vuln-go vuln-trivy
-
-# Update dependencies and tidy
-deps:
-	$(GO) get -u ./...
-	$(GO) mod tidy
-
-# Verify dependencies haven't been tampered with
-verify:
-	$(GO) mod verify
-
-# Full security check: verify + scan
-check: verify vuln
 
 # Clean build artifacts
 clean:
 	rm -f $(BINARY)
-	$(GO) clean -cache
 
-# Show detected Go version
-go-version:
-	@echo "Installed: go$(GO_VERSION)"
-	@echo "go.mod:    $$(grep '^go ' go.mod | awk '{print $$2}')"
-
-# Sync go.mod version to match installed Go
-go-upgrade:
-	@echo "Upgrading go.mod from $$(grep '^go ' go.mod | awk '{print $$2}') to $(GO_VERSION)"
-	@sed -i '' 's/^go [0-9][0-9.]*$$/go $(GO_VERSION)/' go.mod
-	$(GO) mod tidy
-	@echo "Done. Run 'make test' to verify."
-
-# Run CI checks via act (GitHub Actions local runner)
-# Install: brew install act
-# Supports git worktrees by mounting parent .git directory
-
-# Detect git worktree and get parent .git path for container mount
-ACT_WORKTREE_OPTS := $(shell \
-	if [ -f .git ]; then \
-		gitdir=$$(sed -n 's/^gitdir: //p' .git); \
-		parent_git=$$(echo "$$gitdir" | sed 's|/worktrees/.*||'); \
-		echo "--container-options \"-v $$parent_git:$$parent_git:ro\""; \
-	fi)
-
-# CI target - runs build job only (fast, always works)
-ci:
-	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
-	act push -j build -W .github/workflows/ci.yml $(ACT_WORKTREE_OPTS)
-
-# Full CI - runs all jobs (lint/security are informational)
-ci-all: act
-
-act:
-	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
-	act push -W .github/workflows/ci.yml $(ACT_WORKTREE_OPTS)
-
-# Run only the build job
-act-build:
-	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
-	act push -j build -W .github/workflows/ci.yml $(ACT_WORKTREE_OPTS)
-
-# Run only the lint job
-act-lint:
-	@command -v act >/dev/null 2>&1 || { echo "Install act: brew install act"; exit 1; }
-	act push -j lint -W .github/workflows/ci.yml $(ACT_WORKTREE_OPTS)
-
-# Install git pre-push hook (runs act before every push)
-hooks:
-	@mkdir -p .git/hooks
-	@echo '#!/bin/sh' > .git/hooks/pre-push
-	@echo 'make act' >> .git/hooks/pre-push
-	@chmod +x .git/hooks/pre-push
-	@echo '#!/bin/sh' > .git/hooks/commit-msg
-	@echo '# Validate conventional commit format' >> .git/hooks/commit-msg
-	@echo 'msg=$$(cat "$$1")' >> .git/hooks/commit-msg
-	@echo 'pattern="^(feat|fix|refactor|test|build|chore|docs|perf|ci)(\\(.+\\))?: .{1,50}"' >> .git/hooks/commit-msg
-	@echo 'if ! echo "$$msg" | head -1 | grep -qE "$$pattern"; then' >> .git/hooks/commit-msg
-	@echo '  echo "Error: Invalid commit message format"' >> .git/hooks/commit-msg
-	@echo '  echo "Expected: type(scope)?: description (50 chars max)"' >> .git/hooks/commit-msg
-	@echo '  echo "Types: feat, fix, refactor, test, build, chore, docs, perf, ci"' >> .git/hooks/commit-msg
-	@echo '  echo ""' >> .git/hooks/commit-msg
-	@echo '  echo "Your message: $$msg"' >> .git/hooks/commit-msg
-	@echo '  exit 1' >> .git/hooks/commit-msg
-	@echo 'fi' >> .git/hooks/commit-msg
-	@chmod +x .git/hooks/commit-msg
-	@echo "Installed pre-push and commit-msg hooks"
-
-# Release targets (requires goreleaser: brew install goreleaser)
-# Test release locally without publishing
-release-dry-run:
-	@command -v goreleaser >/dev/null 2>&1 || { echo "Install goreleaser: brew install goreleaser"; exit 1; }
-	goreleaser release --snapshot --clean
-
-# Create a new release (tags and pushes, GitHub Actions runs goreleaser)
-# Usage: make release VERSION=v0.1.0
+# Create a release tag (GitHub Actions handles the rest)
+# Usage: make release VERSION=v0.2.0
 release:
-	@if [ -z "$(VERSION)" ]; then echo "Usage: make release VERSION=v0.1.0"; exit 1; fi
-	@echo "Creating release $(VERSION)..."
+	@test -n "$(VERSION)" || { echo "Usage: make release VERSION=v0.2.0"; exit 1; }
 	git tag -a $(VERSION) -m "Release $(VERSION)"
-	git push origin $(VERSION)
-	@echo "Release $(VERSION) tagged and pushed."
-	@echo "GitHub Actions will run goreleaser to build binaries and update homebrew-tap."
+	git push stuffbucket $(VERSION)
+	@echo "Tagged $(VERSION) - GitHub Actions will build and publish."

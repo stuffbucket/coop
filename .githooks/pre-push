@@ -1,0 +1,16 @@
+#!/bin/sh
+# Run local checks before push
+set -e
+
+echo "Running pre-push checks..."
+
+# Lint with staticcheck (fast, local)
+echo "→ Linting..."
+make lint
+
+# Build and test
+echo "→ Building and testing..."
+make build
+make test
+
+echo "✓ All pre-push checks passed"
