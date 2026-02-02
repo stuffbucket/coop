@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"time"
 
 	incus "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/shared/api"
@@ -14,6 +15,28 @@ import (
 	"github.com/stuffbucket/coop/internal/platform"
 	"github.com/stuffbucket/coop/internal/vm"
 )
+
+// WaitCondition represents a condition to wait for.
+type WaitCondition int
+
+const (
+	// WaitStatusRunning waits for instance status to be Running.
+	WaitStatusRunning WaitCondition = iota
+	// WaitStatusStopped waits for instance status to be Stopped.
+	WaitStatusStopped
+	// WaitHasIPv4 waits for a globally routable IPv4 address.
+	WaitHasIPv4
+	// WaitHasIPv6 waits for a globally routable IPv6 address.
+	WaitHasIPv6
+	// WaitHasIP waits for any globally routable IP address.
+	WaitHasIP
+)
+
+// DefaultWaitTimeout is the default timeout for wait operations.
+const DefaultWaitTimeout = 2 * time.Minute
+
+// DefaultWaitInterval is the default polling interval for wait operations.
+const DefaultWaitInterval = time.Second
 
 // Platform is an alias for platform.Type for backward compatibility.
 // Deprecated: Use platform.Type directly.
@@ -318,6 +341,97 @@ func (c *Client) GetContainerIP(name string) (string, error) {
 	}
 
 	return "", fmt.Errorf("no IPv4 address found for container %s", name)
+}
+
+// GetInstanceState returns the current state of an instance.
+func (c *Client) GetInstanceState(name string) (*api.InstanceState, error) {
+	state, _, err := c.conn.GetInstanceState(name)
+	return state, err
+}
+
+// WaitForCondition waits until the specified condition is met.
+// Returns an error if the timeout is reached or the condition cannot be satisfied.
+func (c *Client) WaitForCondition(name string, condition WaitCondition, timeout, interval time.Duration) error {
+	if timeout == 0 {
+		timeout = DefaultWaitTimeout
+	}
+	if interval == 0 {
+		interval = DefaultWaitInterval
+	}
+
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	conditionName := conditionString(condition)
+
+	for {
+		met, err := c.checkCondition(name, condition)
+		if err != nil {
+			return fmt.Errorf("failed to check condition %s: %w", conditionName, err)
+		}
+		if met {
+			return nil
+		}
+
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout waiting for %s on %s", conditionName, name)
+		}
+
+		<-ticker.C
+	}
+}
+
+// checkCondition checks if a single condition is currently met.
+func (c *Client) checkCondition(name string, condition WaitCondition) (bool, error) {
+	state, _, err := c.conn.GetInstanceState(name)
+	if err != nil {
+		return false, err
+	}
+
+	switch condition {
+	case WaitStatusRunning:
+		return state.Status == "Running", nil
+	case WaitStatusStopped:
+		return state.Status == "Stopped", nil
+	case WaitHasIPv4:
+		return hasGlobalIP(state, "inet"), nil
+	case WaitHasIPv6:
+		return hasGlobalIP(state, "inet6"), nil
+	case WaitHasIP:
+		return hasGlobalIP(state, "inet") || hasGlobalIP(state, "inet6"), nil
+	default:
+		return false, fmt.Errorf("unknown condition: %d", condition)
+	}
+}
+
+// hasGlobalIP checks if the instance has a globally routable IP of the given family.
+func hasGlobalIP(state *api.InstanceState, family string) bool {
+	for _, network := range state.Network {
+		for _, addr := range network.Addresses {
+			if addr.Family == family && addr.Scope == "global" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func conditionString(c WaitCondition) string {
+	switch c {
+	case WaitStatusRunning:
+		return "status=Running"
+	case WaitStatusStopped:
+		return "status=Stopped"
+	case WaitHasIPv4:
+		return "ipv4"
+	case WaitHasIPv6:
+		return "ipv6"
+	case WaitHasIP:
+		return "ip"
+	default:
+		return fmt.Sprintf("unknown(%d)", c)
+	}
 }
 
 // ImageExists checks if a local image alias exists.

@@ -33,6 +33,13 @@ const (
 	// CloudInitPollInterval is how often to check cloud-init status.
 	CloudInitPollInterval = 3 * time.Second
 
+	// WaitRunningTimeout is how long to wait for container to reach running state.
+	WaitRunningTimeout = 30 * time.Second
+	// WaitNetworkTimeout is how long to wait for container to get an IP address.
+	WaitNetworkTimeout = 30 * time.Second
+	// WaitNetworkTimeoutShort is used for operations where network is likely already up.
+	WaitNetworkTimeoutShort = 15 * time.Second
+
 	// DefaultProcessLimit protects against fork bombs in containers.
 	DefaultProcessLimit = "500"
 	// AgentUID is the UID for the agent user inside containers.
@@ -162,6 +169,14 @@ func (m *Manager) Create(cfg ContainerConfig) error {
 	if err := m.client.StartContainer(containerName); err != nil {
 		return fmt.Errorf("failed to start container: %w", err)
 	}
+
+	// Wait for container to be fully running with network
+	fmt.Println("Waiting for container to be ready...")
+	if err := m.client.WaitForCondition(containerName, incus.WaitStatusRunning, 0, 0); err != nil {
+		return fmt.Errorf("container failed to start: %w", err)
+	}
+	// Best effort wait for network - container may work without IPv4 initially
+	_ = m.client.WaitForCondition(containerName, incus.WaitHasIPv4, WaitNetworkTimeout, time.Second)
 
 	// Wait for cloud-init to complete
 	fmt.Println("Waiting for cloud-init to complete...")
@@ -421,6 +436,13 @@ func (m *Manager) Start(name string) error {
 	if err := m.client.StartContainer(name); err != nil {
 		return fmt.Errorf("failed to start container: %w", err)
 	}
+
+	// Wait for container to be fully running with network
+	if err := m.client.WaitForCondition(name, incus.WaitStatusRunning, WaitRunningTimeout, time.Second); err != nil {
+		return fmt.Errorf("container failed to reach running state: %w", err)
+	}
+	// Best effort wait for network - don't fail if it times out
+	_ = m.client.WaitForCondition(name, incus.WaitHasIPv4, WaitNetworkTimeoutShort, time.Second)
 
 	return nil
 }
@@ -709,6 +731,8 @@ func (m *Manager) CreateSnapshot(name, snapshotName string) error {
 		if err := m.client.StartContainer(name); err != nil {
 			return fmt.Errorf("snapshot created but failed to restart container: %w", err)
 		}
+		// Best effort wait for container to be fully running again
+		_ = m.client.WaitForCondition(name, incus.WaitStatusRunning, WaitRunningTimeout, time.Second)
 	}
 
 	return nil
@@ -736,6 +760,8 @@ func (m *Manager) RestoreSnapshot(name, snapshotName string) error {
 		if err := m.client.StartContainer(name); err != nil {
 			return fmt.Errorf("restored but failed to restart container: %w", err)
 		}
+		// Best effort wait for container to be fully running again
+		_ = m.client.WaitForCondition(name, incus.WaitStatusRunning, WaitRunningTimeout, time.Second)
 	}
 
 	return nil
