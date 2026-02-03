@@ -17,6 +17,7 @@ import (
 	"github.com/stuffbucket/coop/internal/names"
 	"github.com/stuffbucket/coop/internal/platform"
 	"github.com/stuffbucket/coop/internal/sshkeys"
+	"github.com/stuffbucket/coop/internal/state"
 	"github.com/stuffbucket/coop/internal/ui"
 )
 
@@ -800,6 +801,34 @@ func (m *Manager) DeleteSnapshot(name, snapshotName string) error {
 		return containerNotFound(name)
 	}
 	return m.client.DeleteSnapshot(name, snapshotName)
+}
+
+// PublishSnapshot publishes a container snapshot as a new image.
+// The image lineage is recorded in the registry for later querying.
+func (m *Manager) PublishSnapshot(containerName, snapshotName, alias string) error {
+	if _, err := m.client.GetContainer(containerName); err != nil {
+		return containerNotFound(containerName)
+	}
+
+	// Publish snapshot as image
+	fingerprint, err := m.client.PublishSnapshot(containerName, snapshotName, alias)
+	if err != nil {
+		return fmt.Errorf("publish snapshot: %w", err)
+	}
+
+	// Record lineage in registry
+	registry, err := state.LoadRegistry(m.config.Dirs.Data)
+	if err != nil {
+		// Image was published but lineage not recorded - warn but don't fail
+		fmt.Printf("Warning: image published but lineage not recorded: %v\n", err)
+		return nil
+	}
+
+	if err := registry.RecordPublish(alias, fingerprint, containerName, snapshotName); err != nil {
+		fmt.Printf("Warning: image published but lineage not recorded: %v\n", err)
+	}
+
+	return nil
 }
 
 // MountInfo holds information about a mount.

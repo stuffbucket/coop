@@ -567,3 +567,50 @@ func (c *Client) ListDevices(containerName string) (map[string]map[string]string
 	}
 	return instance.ExpandedDevices, nil
 }
+
+// PublishSnapshot publishes a container snapshot as a new image.
+// Returns the image fingerprint.
+func (c *Client) PublishSnapshot(containerName, snapshotName, alias string) (string, error) {
+	// Create image from snapshot
+	req := api.ImagesPost{
+		Source: &api.ImagesPostSource{
+			Type: "snapshot",
+			Name: fmt.Sprintf("%s/%s", containerName, snapshotName),
+		},
+	}
+
+	op, err := c.conn.CreateImage(req, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create image from snapshot: %w", err)
+	}
+
+	if err := op.Wait(); err != nil {
+		return "", fmt.Errorf("image creation failed: %w", err)
+	}
+
+	// Get the fingerprint from the operation
+	opAPI := op.Get()
+	fingerprint, ok := opAPI.Metadata["fingerprint"].(string)
+	if !ok {
+		return "", fmt.Errorf("failed to get image fingerprint from operation")
+	}
+
+	// Add alias to the image
+	aliasReq := api.ImageAliasesPost{
+		ImageAliasesEntry: api.ImageAliasesEntry{
+			ImageAliasesEntryPut: api.ImageAliasesEntryPut{
+				Target:      fingerprint,
+				Description: fmt.Sprintf("Published from %s/%s", containerName, snapshotName),
+			},
+			Name: alias,
+		},
+	}
+
+	if err := c.conn.CreateImageAlias(aliasReq); err != nil {
+		// Image was created but alias failed - try to clean up
+		return fingerprint, fmt.Errorf("image created (fingerprint: %s) but failed to create alias: %w", fingerprint, err)
+	}
+
+	return fingerprint, nil
+}
+
