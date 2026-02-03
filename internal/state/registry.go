@@ -72,12 +72,15 @@ func (r *Registry) RecordPublish(alias, fingerprint, instance, snapshot string) 
 }
 
 // GetSource returns the source of a published image, or nil if not found.
+// Returns a copy to prevent concurrent modification.
 func (r *Registry) GetSource(alias string) *ImageSource {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if rec, ok := r.Images[alias]; ok {
-		return &rec.Source
+		// Return copy to avoid concurrent access to map data
+		copy := rec.Source
+		return &copy
 	}
 	return nil
 }
@@ -100,5 +103,5 @@ func (r *Registry) save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(r.path, data, 0600)
+	return os.WriteFile(r.path, append(data, '\n'), 0600)
 }

@@ -111,6 +111,16 @@ func (l *Links) CommitFor(snapshotName string) string {
 	return l.Snapshots[snapshotName]
 }
 
+// SnapshotFor returns the snapshot name for a commit hash (reverse lookup).
+func (l *Links) SnapshotFor(commitHash string) string {
+	for name, hash := range l.Snapshots {
+		if hash == commitHash {
+			return name
+		}
+	}
+	return ""
+}
+
 // Packages tracks installed packages by manager.
 type Packages struct {
 	Apt    []string `json:"apt,omitempty"`

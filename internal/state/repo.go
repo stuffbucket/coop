@@ -127,21 +127,6 @@ func (r *Repo) ResetHard(commitHash string) error {
 	return nil
 }
 
-// Checkout switches to a different commit (creates detached HEAD).
-// Prefer ResetHard for undo operations.
-func (r *Repo) Checkout(commitHash string) error {
-	w, err := r.repo.Worktree()
-	if err != nil {
-		return fmt.Errorf("get worktree: %w", err)
-	}
-
-	hash := plumbing.NewHash(commitHash)
-	return w.Checkout(&git.CheckoutOptions{
-		Hash:  hash,
-		Force: true,
-	})
-}
-
 // History returns recent commits with their messages and hashes.
 func (r *Repo) History(limit int) ([]CommitInfo, error) {
 	ref, err := r.repo.Head()

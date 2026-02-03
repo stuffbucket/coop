@@ -176,14 +176,8 @@ func (t *Tracker) Undo(commitHash string) (string, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	// Find snapshot name for this commit (reverse lookup in links)
-	var snapshotName string
-	for name, hash := range t.links.Snapshots {
-		if hash == commitHash {
-			snapshotName = name
-			break
-		}
-	}
+	// Find snapshot name for this commit (reverse lookup)
+	snapshotName := t.links.SnapshotFor(commitHash)
 
 	// Reset to that commit (discards later commits from HEAD)
 	if err := t.repo.ResetHard(commitHash); err != nil {
@@ -200,11 +194,15 @@ func (t *Tracker) Undo(commitHash string) (string, error) {
 	return snapshotName, nil
 }
 
-// Instance returns the current instance state.
+// Instance returns a copy of the current instance state.
+// Returns a copy to prevent concurrent modification of internal state.
 func (t *Tracker) Instance() *Instance {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.instance
+	// Return shallow copy - slices/maps still share backing storage
+	// but that's acceptable for read-only inspection
+	copy := *t.instance
+	return &copy
 }
 
 // History returns recent state changes with commit info.
