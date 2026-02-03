@@ -62,6 +62,12 @@ func IsTTY() bool {
 	return term.IsTerminal(int(os.Stdout.Fd()))
 }
 
+// TerminalSize returns the terminal width and height.
+// Returns (0, 0, err) if not a terminal or size cannot be determined.
+func TerminalSize() (width, height int, err error) {
+	return term.GetSize(int(os.Stdout.Fd()))
+}
+
 // styled applies a style only if output is a TTY
 func styled(style lipgloss.Style, s string) string {
 	if !IsTTY() {
@@ -310,12 +316,25 @@ func Logo() string {
 	return result.String()
 }
 
-// Tagline returns the styled tagline.
-func Tagline() string {
-	if !IsTTY() {
-		return "coop - AI Agent Container Manager"
+// Tagline returns the styled tagline with optional version.
+func Tagline(version string) string {
+	text := "AI Agent Container Manager"
+	if version != "" && version != "dev" {
+		text = fmt.Sprintf("AI Agent Container Manager  v%s", version)
 	}
-	return styled(mutedStyle, "  AI Agent Container Manager")
+	if !IsTTY() {
+		return "coop - " + text
+	}
+	return styled(mutedStyle, "  "+text)
+}
+
+// Separator returns a horizontal line of the specified width.
+func Separator(width int) string {
+	if !IsTTY() {
+		return strings.Repeat("-", width)
+	}
+	line := strings.Repeat("─", width)
+	return styled(mutedStyle, " "+line)
 }
 
 // HelpSection returns a styled section header for help text.
@@ -336,6 +355,215 @@ func HelpEnvVar(name, desc string) string {
 // HelpExample formats an example for help text.
 func HelpExample(example string) string {
 	return styled(exampleStyle, "  "+example)
+}
+
+// HelpEntry represents a single help item (command, env var, etc.)
+type HelpEntry struct {
+	Name string
+	Desc string
+}
+
+// HelpColumn represents a column in the help layout.
+type HelpColumn struct {
+	Title   string
+	Entries []HelpEntry
+}
+
+// HelpLayout renders help content responsively based on terminal width.
+type HelpLayout struct {
+	columns       []HelpColumn
+	minColWidth   int
+	terminalWidth int
+}
+
+// NewHelpLayout creates a new responsive help layout.
+func NewHelpLayout() *HelpLayout {
+	width, _, err := TerminalSize()
+	if err != nil || width < 40 {
+		width = 80 // sensible default
+	}
+	return &HelpLayout{
+		columns:       make([]HelpColumn, 0),
+		minColWidth:   50, // need room for cmd (12) + desc (30+)
+		terminalWidth: width,
+	}
+}
+
+// SetWidth overrides the terminal width for layout calculations.
+func (h *HelpLayout) SetWidth(w int) {
+	if w > 0 {
+		h.terminalWidth = w
+	}
+}
+
+// AddColumn adds a section/column to the layout.
+func (h *HelpLayout) AddColumn(title string, entries []HelpEntry) {
+	h.columns = append(h.columns, HelpColumn{Title: title, Entries: entries})
+}
+
+// Render produces the final layout string.
+func (h *HelpLayout) Render() string {
+	if len(h.columns) == 0 {
+		return ""
+	}
+
+	// Determine layout: prefer 2 columns, fall back to 1
+	numCols := h.terminalWidth / h.minColWidth
+	if numCols < 1 {
+		numCols = 1
+	}
+	if numCols > len(h.columns) {
+		numCols = len(h.columns)
+	}
+	// Cap at 2 columns - 3 gets too cramped for descriptions
+	if numCols > 2 {
+		numCols = 2
+	}
+
+	colWidth := (h.terminalWidth / numCols) - 2 // small gap between columns
+	cmdWidth := 12
+	descWidth := colWidth - cmdWidth - 4 // -4 for indent
+	if descWidth < 15 {
+		descWidth = 15
+	}
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("39"))
+
+	cmdNameStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("212")).
+		Bold(true)
+
+	descStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("245"))
+
+	// Build column content - each column is a self-contained block
+	var renderedCols []string
+	for _, col := range h.columns {
+		var lines []string
+		lines = append(lines, titleStyle.Render(col.Title))
+		lines = append(lines, "")
+		for _, e := range col.Entries {
+			// Pad command name to fixed width
+			name := fmt.Sprintf("%-*s", cmdWidth, e.Name)
+			// Truncate description only if absolutely necessary
+			desc := e.Desc
+			if len(desc) > descWidth {
+				desc = desc[:descWidth-1] + "…"
+			}
+			line := "  " + cmdNameStyle.Render(name) + descStyle.Render(desc)
+			lines = append(lines, line)
+		}
+		renderedCols = append(renderedCols, strings.Join(lines, "\n"))
+	}
+
+	// Arrange columns into rows
+	var rows []string
+	for i := 0; i < len(renderedCols); i += numCols {
+		end := i + numCols
+		if end > len(renderedCols) {
+			end = len(renderedCols)
+		}
+		rowCols := renderedCols[i:end]
+
+		// Find max lines in this row
+		maxLines := 0
+		for _, col := range rowCols {
+			lines := strings.Count(col, "\n") + 1
+			if lines > maxLines {
+				maxLines = lines
+			}
+		}
+
+		// Pad columns to equal height, then join horizontally
+		var paddedCols []string
+		for _, col := range rowCols {
+			lines := strings.Split(col, "\n")
+			for len(lines) < maxLines {
+				lines = append(lines, strings.Repeat(" ", colWidth))
+			}
+			// Ensure each line is padded to column width
+			for j, line := range lines {
+				// Calculate visible width (approximate - ANSI codes make this tricky)
+				visLen := len(stripANSI(line))
+				if visLen < colWidth {
+					lines[j] = line + strings.Repeat(" ", colWidth-visLen)
+				}
+			}
+			paddedCols = append(paddedCols, strings.Join(lines, "\n"))
+		}
+
+		row := lipgloss.JoinHorizontal(lipgloss.Top, paddedCols...)
+		rows = append(rows, row)
+	}
+
+	return strings.Join(rows, "\n\n")
+}
+
+// stripANSI removes ANSI escape codes for length calculation.
+// stripANSI removes ANSI escape codes for length calculation.
+func stripANSI(s string) string {
+	// Simple regex-free approach: skip escape sequences
+	var result strings.Builder
+	inEscape := false
+	for _, r := range s {
+		if r == '\x1b' {
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEscape = false
+			}
+			continue
+		}
+		result.WriteRune(r)
+	}
+	return result.String()
+}
+
+// MaxLineWidth returns the maximum visual width of any line in the string.
+// ANSI escape codes are stripped before measuring.
+func MaxLineWidth(s string) int {
+	maxWidth := 0
+	for _, line := range strings.Split(s, "\n") {
+		width := len(stripANSI(line))
+		if width > maxWidth {
+			maxWidth = width
+		}
+	}
+	return maxWidth
+}
+
+// RenderExamples formats examples in a compact style.
+func RenderExamples(examples []string, termWidth int) string {
+	style := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("248")).
+		PaddingLeft(2)
+
+	var lines []string
+	for _, ex := range examples {
+		lines = append(lines, style.Render(ex))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// RenderEnvVars formats environment variables responsively.
+func RenderEnvVars(vars []HelpEntry, termWidth int) string {
+	nameStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("114")).
+		Width(22)
+
+	descStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("245"))
+
+	var lines []string
+	for _, v := range vars {
+		line := "  " + nameStyle.Render(v.Name) + descStyle.Render(v.Desc)
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // Table helps render aligned tables with ANSI color support.

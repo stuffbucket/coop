@@ -157,9 +157,15 @@ func TestLogoStructure(t *testing.T) {
 	_ = Logo()
 
 	// Tagline should exist
-	tagline := Tagline()
+	tagline := Tagline("")
 	if !strings.Contains(tagline, "AI Agent Container Manager") && tagline != "" {
 		t.Errorf("Tagline should mention 'AI Agent Container Manager', got %q", tagline)
+	}
+
+	// Test with version
+	taglineWithVersion := Tagline("1.2.3")
+	if !strings.Contains(taglineWithVersion, "v1.2.3") && taglineWithVersion != "" {
+		t.Errorf("Tagline should include version when provided, got %q", taglineWithVersion)
 	}
 }
 

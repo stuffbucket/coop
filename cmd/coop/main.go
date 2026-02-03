@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -15,8 +16,20 @@ import (
 	"github.com/stuffbucket/coop/internal/config"
 	"github.com/stuffbucket/coop/internal/logging"
 	"github.com/stuffbucket/coop/internal/sandbox"
+	"github.com/stuffbucket/coop/internal/state"
 	"github.com/stuffbucket/coop/internal/ui"
 	"github.com/stuffbucket/coop/internal/vm"
+)
+
+// Build information, set via ldflags:
+//
+//	-X main.version={{.Version}}
+//	-X main.commit={{.Commit}}
+//	-X main.date={{.Date}}
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
 )
 
 // appConfig holds the application configuration, loaded once at startup.
@@ -37,7 +50,7 @@ func main() {
 	defer func() { _ = logging.Close() }()
 
 	if len(os.Args) < 2 {
-		printUsage()
+		printUsage(false)
 		os.Exit(1)
 	}
 
@@ -76,13 +89,19 @@ func main() {
 		configCmd(os.Args[2:])
 	case "image":
 		imageCmd(os.Args[2:])
+	case "state":
+		stateCmd(os.Args[2:])
+	case "env":
+		envCmd(os.Args[2:])
 	case "vm", "lima": // lima kept as alias for backward compat
 		vmCmd(os.Args[2:])
+	case "version", "-v", "--version":
+		versionCmd()
 	case "help", "-h", "--help":
-		printUsage()
+		helpCmd(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", os.Args[1])
-		printUsage()
+		printUsage(false)
 		os.Exit(1)
 	}
 }
@@ -102,57 +121,120 @@ func initLogging(cfg *config.Config) {
 	}
 }
 
-func printUsage() {
+func helpCmd(args []string) {
+	showAll := false
+	for _, arg := range args {
+		if arg == "--all" || arg == "-a" {
+			showAll = true
+		}
+	}
+	printUsage(showAll)
+}
+
+func versionCmd() {
+	fmt.Printf("coop %s\n", version)
+	if commit != "none" {
+		fmt.Printf("  commit: %s\n", commit)
+	}
+	if date != "unknown" {
+		fmt.Printf("  built:  %s\n", date)
+	}
+	fmt.Printf("  go:     %s\n", runtime.Version())
+}
+
+// detectHelpState checks the current state of coop for contextual help.
+func detectHelpState() ui.HelpState {
+	dirs := config.GetDirectories()
+
+	state := ui.HelpState{
+		IsMacOS: runtime.GOOS == "darwin",
+	}
+
+	// Check if initialized (settings file exists)
+	if _, err := os.Stat(dirs.SettingsFile); err == nil {
+		state.Initialized = true
+	}
+
+	// Check VM status (macOS only) - quick check, don't start anything
+	if state.IsMacOS {
+		// Try to create VM manager and check status without starting
+		if vmMgr, err := vm.NewManager(appConfig); err == nil {
+			if status, err := vmMgr.Status(); err == nil {
+				state.VMRunning = status.State == "Running"
+			}
+		}
+	} else {
+		// On Linux, no VM needed
+		state.VMRunning = true
+	}
+
+	// Check if base image exists - only if we can connect
+	if state.Initialized && (state.VMRunning || !state.IsMacOS) {
+		if mgr, err := sandbox.NewManagerWithConfig(appConfig); err == nil {
+			state.BaseImageOK = mgr.ImageExists(appConfig.Settings.DefaultImage)
+			// Check for containers and count them
+			if containers, err := mgr.List(); err == nil {
+				state.AgentCount = len(containers)
+				state.HasContainers = len(containers) > 0
+				for _, c := range containers {
+					if c.Status == "Running" {
+						state.RunningCount++
+					}
+				}
+			}
+		}
+	}
+
+	return state
+}
+
+func printUsage(showAll bool) {
+	// Detect current state for contextual help
+	state := detectHelpState()
+	builder := ui.NewHelpBuilder(state)
+	dashboard := ui.NewDashboardProvider(state, version, "")
+
 	logo := ui.Logo()
 	if logo != "" {
 		fmt.Print(logo)
 	}
-	fmt.Println(ui.Tagline())
-	fmt.Println()
+	fmt.Println(ui.Tagline(version))
 
-	fmt.Println(ui.HelpSection("Usage:"))
-	fmt.Println("  coop <command> [options]")
-	fmt.Println()
+	if !showAll {
+		// Compact view - use narrower width that matches actual content
+		compactWidth := builder.CompactLayoutWidth()
+		if builder.Width() < compactWidth {
+			compactWidth = builder.Width()
+		}
+		fmt.Println(ui.Separator(compactWidth - 1)) // -1 for indent
+		fmt.Println()
 
-	fmt.Println(ui.HelpSection("Commands:"))
-	fmt.Println(ui.HelpCommand("init", "Initialize coop directories and settings"))
-	fmt.Println(ui.HelpCommand("create", "Create a new agent container"))
-	fmt.Println(ui.HelpCommand("start", "Start a stopped container"))
-	fmt.Println(ui.HelpCommand("stop", "Stop a running container"))
-	fmt.Println(ui.HelpCommand("lock", "Freeze container (pause all processes)"))
-	fmt.Println(ui.HelpCommand("unlock", "Unfreeze container (resume processes)"))
-	fmt.Println(ui.HelpCommand("delete", "Delete an agent container"))
-	fmt.Println(ui.HelpCommand("list", "List all agent containers"))
-	fmt.Println(ui.HelpCommand("status", "Show container status"))
-	fmt.Println(ui.HelpCommand("logs", "View container logs (journalctl)"))
-	fmt.Println(ui.HelpCommand("shell", "Open interactive shell in container"))
-	fmt.Println(ui.HelpCommand("ssh", "Print SSH command for container"))
-	fmt.Println(ui.HelpCommand("exec", "Execute command in container"))
-	fmt.Println(ui.HelpCommand("mount", "Manage container mounts"))
-	fmt.Println(ui.HelpCommand("snapshot", "Manage container snapshots"))
-	fmt.Println(ui.HelpCommand("config", "Show configuration and paths"))
-	fmt.Println(ui.HelpCommand("image", "Manage base images (build, list)"))
-	fmt.Println(ui.HelpCommand("vm", "Manage VM backend (Colima/Lima)"))
-	fmt.Println(ui.HelpCommand("help", "Show this help"))
-	fmt.Println()
+		fmt.Println(" " + ui.HelpSection("Usage:"))
+		fmt.Println("   coop <command> [options]")
+		fmt.Println()
 
-	fmt.Println(ui.HelpSection("Environment Variables:"))
-	fmt.Println(ui.HelpEnvVar("COOP_CONFIG_DIR", "Config directory"))
-	fmt.Println(ui.HelpEnvVar("COOP_DATA_DIR", "Data directory"))
-	fmt.Println(ui.HelpEnvVar("COOP_CACHE_DIR", "Cache directory"))
-	fmt.Println(ui.HelpEnvVar("COOP_DEFAULT_IMAGE", "Default container image"))
-	fmt.Println(ui.HelpEnvVar("COOP_VM_INSTANCE", "VM instance name"))
-	fmt.Println(ui.HelpEnvVar("COOP_VM_BACKEND", "Force backend (colima, lima)"))
-	fmt.Println()
+		builder.Add(ui.NewQuickHelpProvider())
+		builder.Add(ui.NewQuickStartProvider(state))
+		builder.Add(ui.NewHintProvider(false))
+		fmt.Println(builder.RenderWithDashboard(dashboard))
+		fmt.Println()
+	} else {
+		// Full view - use max-width constrained header
+		headerWidth := builder.EffectiveWidth()
+		fmt.Println(ui.Separator(headerWidth - 1)) // -1 for indent
+		fmt.Println()
 
-	fmt.Println(ui.HelpSection("Examples:"))
-	fmt.Println(ui.HelpExample("coop init"))
-	fmt.Println(ui.HelpExample("coop create myagent"))
-	fmt.Println(ui.HelpExample("coop create myagent --cpus 4 --memory 8192"))
-	fmt.Println(ui.HelpExample("coop list"))
-	fmt.Println(ui.HelpExample("coop shell myagent"))
-	fmt.Println(ui.HelpExample("coop vm status"))
-	fmt.Println(ui.HelpExample("coop image build"))
+		fmt.Println(" " + ui.HelpSection("Usage:"))
+		fmt.Println("   coop <command> [options]")
+		fmt.Println()
+
+		builder.Add(ui.NewCommandColumnsProvider())
+		builder.Add(ui.NewGettingStartedProvider(state))
+		builder.Add(ui.NewExamplesProvider(state))
+		builder.Add(ui.NewTerminalInfoProvider(true))
+		fmt.Println(builder.RenderWithDashboard(dashboard))
+		fmt.Println()
+	}
 }
 
 // mustManager creates a new sandbox.Manager or exits with an error.
@@ -238,6 +320,17 @@ func createCmd(args []string) {
 	if err := mgr.Create(cfg); err != nil {
 		ui.Errorf("Error creating container: %v", err)
 		os.Exit(1)
+	}
+
+	// Initialize state tracker for this container
+	// Determines base image from config (same logic Manager uses)
+	baseImage := appConfig.Settings.DefaultImage
+	if baseImage == "" {
+		baseImage = sandbox.DefaultImage
+	}
+	instanceDir := filepath.Join(appConfig.Dirs.Data, "instances")
+	if _, err := state.NewTracker(instanceDir, name, baseImage); err != nil {
+		ui.Warnf("Container created but state tracking failed: %v", err)
 	}
 
 	// Update SSH config for easy access
@@ -633,6 +726,51 @@ func configCmd(args []string) {
 	}
 }
 
+func envCmd(args []string) {
+	fmt.Println(ui.Bold("Coop Environment Variables"))
+	fmt.Println(strings.Repeat("=", 40))
+	fmt.Println()
+
+	dirs := config.GetDirectories()
+
+	// Define all COOP environment variables
+	envVars := []struct {
+		name    string
+		desc    string
+		current string
+	}{
+		{"COOP_CONFIG_DIR", "Configuration directory", dirs.Config},
+		{"COOP_DATA_DIR", "Data directory (instances, images)", dirs.Data},
+		{"COOP_CACHE_DIR", "Cache directory", dirs.Cache},
+		{"COOP_DEFAULT_IMAGE", "Default container image", appConfig.Settings.DefaultImage},
+		{"COOP_VM_INSTANCE", "VM instance name", appConfig.Settings.VM.Instance},
+		{"COOP_VM_BACKEND", "Force VM backend (colima, lima)", ""},
+	}
+
+	for _, ev := range envVars {
+		val := os.Getenv(ev.name)
+		if val != "" {
+			// Environment variable is set
+			fmt.Printf("  %s\n", ui.Name(ev.name))
+			fmt.Printf("    %s\n", ui.MutedText(ev.desc))
+			fmt.Printf("    Value: %s %s\n", ui.SuccessText(val), ui.MutedText("(from environment)"))
+		} else {
+			// Using default/config value
+			fmt.Printf("  %s\n", ui.MutedText(ev.name))
+			fmt.Printf("    %s\n", ui.MutedText(ev.desc))
+			if ev.current != "" {
+				fmt.Printf("    Value: %s %s\n", ev.current, ui.MutedText("(default)"))
+			} else {
+				fmt.Printf("    Value: %s\n", ui.MutedText("(not set)"))
+			}
+		}
+		fmt.Println()
+	}
+
+	ui.Muted("Set environment variables to override defaults.")
+	ui.Muted("Example: export COOP_DEFAULT_IMAGE=my-custom-image")
+}
+
 func snapshotCmd(args []string) {
 	if len(args) == 0 {
 		printSnapshotUsage()
@@ -656,14 +794,18 @@ func snapshotCmd(args []string) {
 }
 
 func snapshotCreateCmd(args []string) {
-	if len(args) < 2 {
+	fs := flag.NewFlagSet("snapshot create", flag.ExitOnError)
+	note := fs.String("note", "", "Optional note about this snapshot")
+	_ = fs.Parse(args)
+
+	if fs.NArg() < 2 {
 		ui.Error("container name and snapshot name required")
-		ui.Muted("Usage: coop snapshot create <container> <snapshot-name>")
+		ui.Muted("Usage: coop snapshot create <container> <snapshot-name> [--note 'reason']")
 		os.Exit(1)
 	}
 
-	container := args[0]
-	snapshotName := args[1]
+	container := fs.Arg(0)
+	snapshotName := fs.Arg(1)
 
 	mgr := mustManager()
 
@@ -671,6 +813,15 @@ func snapshotCreateCmd(args []string) {
 	if err := mgr.CreateSnapshot(container, snapshotName); err != nil {
 		ui.Errorf("Error: %v", err)
 		os.Exit(1)
+	}
+
+	// Record in state tracker (best effort - don't fail if tracker setup fails)
+	instanceDir := filepath.Join(appConfig.Dirs.Data, "instances")
+	tracker, err := state.NewTracker(instanceDir, container, "")
+	if err == nil {
+		if _, err := tracker.RecordSnapshot(snapshotName, *note); err != nil {
+			ui.Warnf("Snapshot created but state tracking failed: %v", err)
+		}
 	}
 
 	ui.Successf("Snapshot %s created", ui.Name(snapshotName))
@@ -1156,6 +1307,10 @@ func imageCmd(args []string) {
 		imageListCmd(args[1:])
 	case "exists":
 		imageExistsCmd(args[1:])
+	case "publish":
+		imagePublishCmd(args[1:])
+	case "lineage":
+		imageLineageCmd(args[1:])
 	default:
 		ui.Errorf("Unknown image subcommand: %s", args[0])
 		printImageUsage()
@@ -1270,12 +1425,219 @@ func imageExistsCmd(args []string) {
 	}
 }
 
+func imagePublishCmd(args []string) {
+	if len(args) < 3 {
+		ui.Error("container, snapshot, and alias required")
+		ui.Muted("Usage: coop image publish <container> <snapshot> <alias>")
+		ui.Muted("Example: coop image publish mydev checkpoint1 claude-code-base")
+		os.Exit(1)
+	}
+
+	container := args[0]
+	snapshot := args[1]
+	alias := args[2]
+
+	mgr := mustManager()
+
+	ui.Printf("Publishing %s/%s as %s...\n", ui.Name(container), ui.Name(snapshot), ui.Name(alias))
+	if err := mgr.PublishSnapshot(container, snapshot, alias); err != nil {
+		ui.Errorf("Error: %v", err)
+		os.Exit(1)
+	}
+
+	ui.Successf("Image %s published", ui.Name(alias))
+	ui.Mutedf("Lineage recorded: %s/%s -> %s", container, snapshot, alias)
+}
+
+func imageLineageCmd(args []string) {
+	if len(args) < 1 {
+		ui.Error("image alias required")
+		ui.Muted("Usage: coop image lineage <alias>")
+		os.Exit(1)
+	}
+
+	alias := args[0]
+
+	registry, err := state.LoadRegistry(appConfig.Dirs.Data)
+	if err != nil {
+		ui.Errorf("Error loading registry: %v", err)
+		os.Exit(1)
+	}
+
+	source := registry.GetSource(alias)
+	if source == nil {
+		ui.Warnf("No lineage recorded for %s", alias)
+		ui.Muted("(Image may have been imported or built externally)")
+		os.Exit(1)
+	}
+
+	fmt.Printf("%s  %s\n", ui.Bold("Image:"), ui.Name(alias))
+	fmt.Printf("%s  %s\n", ui.Bold("Built from:"), ui.Name(source.Instance))
+	fmt.Printf("%s  %s\n", ui.Bold("Snapshot:"), ui.Name(source.Snapshot))
+
+	// Try to show more lineage from the instance's state tracker
+	instanceDir := filepath.Join(appConfig.Dirs.Data, "instances")
+	tracker, err := state.NewTracker(instanceDir, source.Instance, "")
+	if err == nil {
+		inst := tracker.Instance()
+		if inst.BaseImage != "" {
+			fmt.Printf("%s  %s\n", ui.Bold("Base image:"), ui.Name(inst.BaseImage))
+		}
+	}
+}
+
+func stateCmd(args []string) {
+	if len(args) == 0 {
+		printStateUsage()
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "history":
+		stateHistoryCmd(args[1:])
+	case "show":
+		stateShowCmd(args[1:])
+	default:
+		ui.Errorf("Unknown state subcommand: %s", args[0])
+		printStateUsage()
+		os.Exit(1)
+	}
+}
+
+func stateHistoryCmd(args []string) {
+	fs := flag.NewFlagSet("state history", flag.ExitOnError)
+	limit := fs.Int("n", 20, "Number of entries to show")
+	_ = fs.Parse(args)
+
+	if fs.NArg() < 1 {
+		ui.Error("container name required")
+		ui.Muted("Usage: coop state history <container> [-n limit]")
+		os.Exit(1)
+	}
+
+	container := fs.Arg(0)
+
+	instanceDir := filepath.Join(appConfig.Dirs.Data, "instances")
+	tracker, err := state.NewTracker(instanceDir, container, "")
+	if err != nil {
+		ui.Errorf("Error loading state: %v", err)
+		ui.Muted("(Container may not have state tracking enabled)")
+		os.Exit(1)
+	}
+
+	history, err := tracker.History(*limit)
+	if err != nil {
+		ui.Errorf("Error getting history: %v", err)
+		os.Exit(1)
+	}
+
+	if len(history) == 0 {
+		ui.Muted("No state history recorded")
+		return
+	}
+
+	fmt.Printf("%s state history:\n\n", ui.Name(container))
+
+	for _, entry := range history {
+		timeStr := entry.Time.Format("2006-01-02 15:04")
+		hash := entry.Hash[:8]
+		msg := strings.TrimSpace(entry.Message)
+		fmt.Printf("  %s  %s  %s\n", ui.MutedText(hash), ui.MutedText(timeStr), msg)
+	}
+}
+
+func stateShowCmd(args []string) {
+	if len(args) < 1 {
+		ui.Error("container name required")
+		ui.Muted("Usage: coop state show <container>")
+		os.Exit(1)
+	}
+
+	container := args[0]
+
+	instanceDir := filepath.Join(appConfig.Dirs.Data, "instances")
+	tracker, err := state.NewTracker(instanceDir, container, "")
+	if err != nil {
+		ui.Errorf("Error loading state: %v", err)
+		os.Exit(1)
+	}
+
+	inst := tracker.Instance()
+
+	fmt.Printf("%s  %s\n", ui.Bold("Name:"), ui.Name(inst.Name))
+	fmt.Printf("%s  %s\n", ui.Bold("Base image:"), inst.BaseImage)
+	fmt.Printf("%s  %s\n", ui.Bold("Created:"), inst.CreatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Printf("%s  %s\n", ui.Bold("State dir:"), ui.Path(tracker.Path()))
+
+	if inst.CurrentSnapshot != "" {
+		fmt.Printf("%s  %s\n", ui.Bold("Current snapshot:"), ui.Name(inst.CurrentSnapshot))
+	}
+
+	// Show packages if any
+	hasPackages := len(inst.Packages.Apt) > 0 || len(inst.Packages.Pip) > 0 ||
+		len(inst.Packages.Npm) > 0 || len(inst.Packages.Go) > 0 ||
+		len(inst.Packages.Cargo) > 0 || len(inst.Packages.Brew) > 0
+
+	if hasPackages {
+		fmt.Println()
+		fmt.Println(ui.Header("Packages:"))
+		if len(inst.Packages.Apt) > 0 {
+			fmt.Printf("  apt: %s\n", strings.Join(inst.Packages.Apt, ", "))
+		}
+		if len(inst.Packages.Pip) > 0 {
+			fmt.Printf("  pip: %s\n", strings.Join(inst.Packages.Pip, ", "))
+		}
+		if len(inst.Packages.Npm) > 0 {
+			fmt.Printf("  npm: %s\n", strings.Join(inst.Packages.Npm, ", "))
+		}
+		if len(inst.Packages.Go) > 0 {
+			fmt.Printf("  go: %s\n", strings.Join(inst.Packages.Go, ", "))
+		}
+		if len(inst.Packages.Cargo) > 0 {
+			fmt.Printf("  cargo: %s\n", strings.Join(inst.Packages.Cargo, ", "))
+		}
+		if len(inst.Packages.Brew) > 0 {
+			fmt.Printf("  brew: %s\n", strings.Join(inst.Packages.Brew, ", "))
+		}
+	}
+
+	if len(inst.Mounts) > 0 {
+		fmt.Println()
+		fmt.Println(ui.Header("Mounts:"))
+		for _, m := range inst.Mounts {
+			mode := "rw"
+			if m.Readonly {
+				mode = "ro"
+			}
+			fmt.Printf("  %s: %s -> %s (%s)\n", ui.Name(m.Name), m.Source, m.Path, mode)
+		}
+	}
+}
+
+func printStateUsage() {
+	fmt.Println("Usage: coop state <subcommand>")
+	fmt.Println("\nSubcommands:")
+	fmt.Println("  history <container> [-n limit]   Show state change history")
+	fmt.Println("  show <container>                 Show current tracked state")
+	fmt.Println("\nState tracking records:")
+	fmt.Println("  - Snapshots created with 'coop snapshot create'")
+	fmt.Println("  - Base image used to create the container")
+	fmt.Println("  - Git-style history with commit messages")
+}
+
 func printImageUsage() {
 	fmt.Println("Usage: coop image <subcommand>")
 	fmt.Println("\nSubcommands:")
-	fmt.Println("  build      Build the coop-agent-base image (~10 min)")
-	fmt.Println("  list       List local images")
-	fmt.Println("  exists     Check if an image alias exists")
+	fmt.Println("  build                              Build the coop-agent-base image (~10 min)")
+	fmt.Println("  list                               List local images")
+	fmt.Println("  exists <alias>                     Check if an image alias exists")
+	fmt.Println("  publish <container> <snap> <alias> Publish snapshot as new image")
+	fmt.Println("  lineage <alias>                    Show where an image came from")
 	fmt.Println("\nThe base image includes Python 3.13, Go 1.24, Node.js 24,")
 	fmt.Println("GitHub CLI, Claude Code CLI, and development tools.")
+	fmt.Println("\nWorkflow example:")
+	fmt.Println("  coop create mydev                        # Create from base")
+	fmt.Println("  coop shell mydev                         # Customize it")
+	fmt.Println("  coop snapshot create mydev checkpoint1   # Save state")
+	fmt.Println("  coop image publish mydev checkpoint1 my-variant")
 }
