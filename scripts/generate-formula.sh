@@ -66,6 +66,8 @@ class Coop < Formula
   version "${VERSION}"
   license "MIT"
 
+  depends_on "colima" => "< 0.7.0"
+
   on_macos do
     on_arm do
       url "${RELEASE_URL}/coop_${VERSION}_darwin_aarch64.tar.gz"

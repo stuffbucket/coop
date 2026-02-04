@@ -434,6 +434,24 @@ func conditionString(c WaitCondition) string {
 	}
 }
 
+// StorageInfo contains storage pool capacity information.
+type StorageInfo struct {
+	Available uint64 // Available bytes
+	Total     uint64 // Total bytes
+}
+
+// GetStorageInfo returns storage capacity for the default pool.
+func (c *Client) GetStorageInfo() (*StorageInfo, error) {
+	resources, err := c.conn.GetStoragePoolResources("default")
+	if err != nil {
+		return nil, err
+	}
+	return &StorageInfo{
+		Available: resources.Space.Total - resources.Space.Used,
+		Total:     resources.Space.Total,
+	}, nil
+}
+
 // ImageExists checks if a local image alias exists.
 func (c *Client) ImageExists(alias string) bool {
 	_, _, err := c.conn.GetImageAlias(alias)
@@ -571,11 +589,17 @@ func (c *Client) ListDevices(containerName string) (map[string]map[string]string
 // PublishSnapshot publishes a container snapshot as a new image.
 // Returns the image fingerprint.
 func (c *Client) PublishSnapshot(containerName, snapshotName, alias string) (string, error) {
-	// Create image from snapshot
+	// Create image from snapshot with coop metadata
 	req := api.ImagesPost{
 		Source: &api.ImagesPostSource{
 			Type: "snapshot",
 			Name: fmt.Sprintf("%s/%s", containerName, snapshotName),
+		},
+		ImagePut: api.ImagePut{
+			Properties: map[string]string{
+				"user.coop":        "true",
+				"user.coop.source": fmt.Sprintf("%s/%s", containerName, snapshotName),
+			},
 		},
 	}
 

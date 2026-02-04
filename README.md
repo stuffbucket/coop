@@ -13,6 +13,7 @@ Protected directories like `~/.ssh`, `~/Library`, and system paths under SIP are
 On macOS, Incus requires a Linux VM. Coop manages this through Colima (preferred) or Lima:
 
 ```bash
+# Install dependencies (or use: brew bundle)
 brew install colima incus
 colima start --profile incus --vm-type vz --vz-rosetta --network-address
 ```
@@ -97,6 +98,7 @@ Mount listing uses visual indicators: `<--->` for read-write (bidirectional), `-
 | `coop image list` | List local images |
 | `coop vm status` | Show VM status (macOS only) |
 | `coop vm start/stop/shell` | Manage VM |
+| `coop doctor` | Check setup health and diagnose issues |
 
 ## Architecture
 

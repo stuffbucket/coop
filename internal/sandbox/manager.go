@@ -29,6 +29,10 @@ const (
 	// AgentProfile is the Incus profile for agent containers.
 	AgentProfile = "agent-sandbox"
 
+	// CoopManagedTag is the config key used to identify coop-managed resources.
+	// All containers, profiles, and images created by coop have user.coop="true".
+	CoopManagedTag = "user.coop"
+
 	// CloudInitTimeout is max time to wait for cloud-init to complete.
 	CloudInitTimeout = 10 * time.Minute
 	// CloudInitPollInterval is how often to check cloud-init status.
@@ -145,11 +149,12 @@ func (m *Manager) Create(cfg ContainerConfig) error {
 	// NOTE: Environment variables can be passed via "environment.VAR_NAME" keys
 	// e.g., "environment.ANTHROPIC_API_KEY": cfg.AnthropicKey
 	containerConfig := map[string]string{
-		"user.user-data":   userData,
-		"limits.cpu":       fmt.Sprintf("%d", cfg.CPUs),
-		"limits.memory":    fmt.Sprintf("%dMiB", cfg.MemoryMB),
-		"limits.processes": DefaultProcessLimit,
-		"raw.idmap":        fmt.Sprintf("both %d %d", os.Getuid(), AgentUID),
+		CoopManagedTag:       "true",
+		"user.user-data":    userData,
+		"limits.cpu":        fmt.Sprintf("%d", cfg.CPUs),
+		"limits.memory":     fmt.Sprintf("%dMiB", cfg.MemoryMB),
+		"limits.processes":  DefaultProcessLimit,
+		"raw.idmap":         fmt.Sprintf("both %d %d", os.Getuid(), AgentUID),
 	}
 
 	// Resolve image: prefer base image, fall back to remote if missing
@@ -284,6 +289,7 @@ func BuildBaseImage() error {
 
 func (m *Manager) ensureAgentProfile(cfg ContainerConfig) error {
 	profileConfig := map[string]string{
+		CoopManagedTag:     "true",
 		"security.nesting": "true",
 	}
 
@@ -703,6 +709,15 @@ func (m *Manager) GetContainerIP(name string) (string, error) {
 // ImageExists checks if a local image alias exists.
 func (m *Manager) ImageExists(alias string) bool {
 	return m.client.ImageExists(alias)
+}
+
+// GetStorageInfo returns storage capacity for the default pool.
+func (m *Manager) GetStorageInfo() (avail, total uint64, err error) {
+	info, err := m.client.GetStorageInfo()
+	if err != nil {
+		return 0, 0, err
+	}
+	return info.Available, info.Total, nil
 }
 
 // CreateSnapshot creates a snapshot of a container.

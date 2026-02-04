@@ -20,13 +20,15 @@ type HelpSectionProvider interface {
 
 // HelpState represents the current state of coop for contextual help.
 type HelpState struct {
-	Initialized   bool // coop init has been run
-	VMRunning     bool // VM is running (macOS)
-	BaseImageOK   bool // base image exists
-	HasContainers bool // at least one container exists
-	IsMacOS       bool // running on macOS
-	AgentCount    int  // total number of agents
-	RunningCount  int  // number of running agents
+	Initialized   bool   // coop init has been run
+	VMRunning     bool   // VM is running (macOS)
+	BaseImageOK   bool   // base image exists
+	HasContainers bool   // at least one container exists
+	IsMacOS       bool   // running on macOS
+	AgentCount    int    // total number of agents
+	RunningCount  int    // number of running agents
+	StorageAvail  uint64 // available storage bytes
+	StorageTotal  uint64 // total storage bytes
 }
 
 // IsFresh returns true if coop appears to be in initial state.
@@ -260,6 +262,7 @@ func NewCommandColumnsProvider() *CommandColumnsProvider {
 				{"image", "Manage images"},
 			}},
 			{Title: "Infrastructure", Entries: []HelpEntry{
+				{"doctor", "Check setup health"},
 				{"vm", "VM backend (macOS)"},
 				{"config", "Show config"},
 				{"env", "Show environment"},
@@ -602,6 +605,29 @@ func (p *DashboardProvider) Render(width int) string {
 		lines = append(lines, fmt.Sprintf("  %s %s",
 			warnStyle.Render("○"),
 			dimStyle.Render("No base image")))
+	}
+
+	// Storage
+	if p.state.StorageTotal > 0 {
+		availGB := float64(p.state.StorageAvail) / (1024 * 1024 * 1024)
+		pctFree := 100.0 * float64(p.state.StorageAvail) / float64(p.state.StorageTotal)
+		storageText := fmt.Sprintf("%.0f%% Free (%.0fG)", pctFree, availGB)
+
+		errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+
+		if pctFree < 5 {
+			lines = append(lines, fmt.Sprintf("  %s %s",
+				errStyle.Render("●"),
+				errStyle.Render(storageText)))
+		} else if pctFree < 10 {
+			lines = append(lines, fmt.Sprintf("  %s %s",
+				warnStyle.Render("●"),
+				storageText))
+		} else {
+			lines = append(lines, fmt.Sprintf("  %s %s",
+				okStyle.Render("●"),
+				storageText))
+		}
 	}
 
 	return strings.Join(lines, "\n")

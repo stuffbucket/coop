@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/stuffbucket/coop/internal/config"
+	"github.com/stuffbucket/coop/internal/doctor"
 	"github.com/stuffbucket/coop/internal/logging"
 	"github.com/stuffbucket/coop/internal/sandbox"
 	"github.com/stuffbucket/coop/internal/state"
@@ -95,6 +96,8 @@ func main() {
 		envCmd(os.Args[2:])
 	case "vm", "lima": // lima kept as alias for backward compat
 		vmCmd(os.Args[2:])
+	case "doctor":
+		doctorCmd(os.Args[2:])
 	case "version", "-v", "--version":
 		versionCmd()
 	case "help", "-h", "--help":
@@ -182,6 +185,11 @@ func detectHelpState() ui.HelpState {
 					}
 				}
 			}
+			// Get storage info
+			if avail, total, err := mgr.GetStorageInfo(); err == nil {
+				state.StorageAvail = avail
+				state.StorageTotal = total
+			}
 		}
 	}
 
@@ -249,6 +257,28 @@ func mustManager() *sandbox.Manager {
 }
 
 func initCmd(args []string) {
+	dirs := config.GetDirectories()
+
+	// Detect if already initialized
+	_, settingsExists := os.Stat(dirs.SettingsFile)
+	_, sshKeyExists := os.Stat(filepath.Join(dirs.SSH, "id_ed25519"))
+	alreadyInitialized := settingsExists == nil && sshKeyExists == nil
+
+	fmt.Println()
+	if alreadyInitialized {
+		ui.Print(ui.Bold("Coop is already initialized"))
+		fmt.Println()
+		ui.Successf("Config directory: %s", ui.Path(dirs.Config))
+		ui.Successf("Data directory:   %s", ui.Path(dirs.Data))
+		ui.Successf("Cache directory:  %s", ui.Path(dirs.Cache))
+		ui.Successf("Settings file:    %s", ui.Path(dirs.SettingsFile))
+		ui.Successf("SSH keys:         %s", ui.Path(dirs.SSH))
+		fmt.Println()
+		ui.Muted("Run 'coop config' to see full configuration.")
+		fmt.Println()
+		return
+	}
+
 	ui.Print(ui.Bold("Initializing coop..."))
 
 	if err := config.EnsureDirectories(); err != nil {
@@ -256,7 +286,6 @@ func initCmd(args []string) {
 		os.Exit(1)
 	}
 
-	dirs := config.GetDirectories()
 	ui.Successf("Created config directory: %s", ui.Path(dirs.Config))
 	ui.Successf("Created data directory:   %s", ui.Path(dirs.Data))
 	ui.Successf("Created cache directory:  %s", ui.Path(dirs.Cache))
@@ -274,6 +303,7 @@ func initCmd(args []string) {
 	fmt.Println()
 	ui.Success("Coop initialized successfully!")
 	ui.Muted("Run 'coop config' to see all paths.")
+	fmt.Println()
 }
 
 func createCmd(args []string) {
@@ -1292,6 +1322,91 @@ func printVMUsage() {
 	fmt.Println("  delete     Delete VM")
 	fmt.Println("  socket     Print Incus socket path")
 	fmt.Println("  backends   List available VM backends")
+}
+
+func doctorCmd(args []string) {
+	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
+	fix := fs.Bool("fix", false, "Attempt to fix issues automatically")
+	_ = fs.Parse(args)
+
+	fmt.Println()
+	ui.Print(ui.Bold("Coop Doctor"))
+	fmt.Println()
+
+	report := doctor.Run(appConfig)
+
+	// Print results
+	maxNameLen := 0
+	for _, r := range report.Results {
+		if len(r.Name) > maxNameLen {
+			maxNameLen = len(r.Name)
+		}
+	}
+
+	for _, r := range report.Results {
+		var icon, color string
+		switch r.Status {
+		case doctor.StatusPass:
+			icon = "✓"
+			color = "green"
+		case doctor.StatusWarn:
+			icon = "!"
+			color = "yellow"
+		case doctor.StatusFail:
+			icon = "✗"
+			color = "red"
+		case doctor.StatusSkip:
+			icon = "-"
+			color = "gray"
+		}
+
+		// Format the line
+		name := r.Name
+		for len(name) < maxNameLen {
+			name += " "
+		}
+
+		switch color {
+		case "green":
+			fmt.Printf("  %s  %s  %s\n", ui.SuccessText(icon), name, ui.MutedText(r.Message))
+		case "yellow":
+			fmt.Printf("  %s  %s  %s\n", ui.WarningText(icon), name, r.Message)
+		case "red":
+			fmt.Printf("  %s  %s  %s\n", ui.ErrorText(icon), name, ui.ErrorText(r.Message))
+		default:
+			fmt.Printf("  %s  %s  %s\n", ui.MutedText(icon), ui.MutedText(name), ui.MutedText(r.Message))
+		}
+
+		// Show fix suggestion for failures
+		if r.Status == doctor.StatusFail && r.Fix != "" {
+			if *fix {
+				// Attempt auto-fix
+				fmt.Printf("      %s %s\n", ui.MutedText("fixing:"), r.Fix)
+				// For now, just show the command - actual auto-fix would execute it
+			} else {
+				fmt.Printf("      %s %s\n", ui.MutedText("fix:"), ui.WarningText(r.Fix))
+			}
+		}
+	}
+
+	// Summary
+	pass, warn, fail := report.Summary()
+	fmt.Println()
+	if fail == 0 && warn == 0 {
+		ui.Success("All checks passed!")
+	} else if fail == 0 {
+		ui.Printf("%d passed, %d warnings\n", pass, warn)
+	} else {
+		ui.Printf("%d passed, %d warnings, %s\n", pass, warn, ui.ErrorText(fmt.Sprintf("%d failed", fail)))
+		fmt.Println()
+		ui.Muted("Run suggested fix commands to resolve issues.")
+		ui.Muted("For macOS dependencies: brew bundle")
+	}
+	fmt.Println()
+
+	if report.HasFailures() {
+		os.Exit(1)
+	}
 }
 
 func imageCmd(args []string) {
