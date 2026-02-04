@@ -13,13 +13,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/stuffbucket/coop/internal/backend"
 	"github.com/stuffbucket/coop/internal/config"
 	"github.com/stuffbucket/coop/internal/doctor"
 	"github.com/stuffbucket/coop/internal/logging"
 	"github.com/stuffbucket/coop/internal/sandbox"
 	"github.com/stuffbucket/coop/internal/state"
 	"github.com/stuffbucket/coop/internal/ui"
-	"github.com/stuffbucket/coop/internal/vm"
 )
 
 // Build information, set via ldflags:
@@ -161,8 +161,8 @@ func detectHelpState() ui.HelpState {
 
 	// Check VM status (macOS only) - quick check, don't start anything
 	if state.IsMacOS {
-		// Try to create VM manager and check status without starting
-		if vmMgr, err := vm.NewManager(appConfig); err == nil {
+		// Try to create backend manager and check status without starting
+		if vmMgr, err := backend.NewManager(appConfig); err == nil {
 			if status, err := vmMgr.Status(); err == nil {
 				state.VMRunning = status.State == "Running"
 			}
@@ -1224,9 +1224,9 @@ func vmCmd(args []string) {
 		os.Exit(1)
 	}
 
-	mgr, err := vm.NewManager(appConfig)
+	mgr, err := backend.NewManager(appConfig)
 	if err != nil {
-		ui.Errorf("Error creating VM manager: %v", err)
+		ui.Errorf("Error creating backend manager: %v", err)
 		os.Exit(1)
 	}
 
@@ -1444,10 +1444,10 @@ func imageBuildCmd(args []string) {
 func imageListCmd(args []string) {
 	mgr := mustManager()
 
-	// Get socket path from VM backend to pass to incus CLI
-	vmMgr, err := vm.NewManager(appConfig)
+	// Get socket path from backend to pass to incus CLI
+	vmMgr, err := backend.NewManager(appConfig)
 	if err != nil {
-		ui.Errorf("Error initializing VM manager: %v", err)
+		ui.Errorf("Error initializing backend: %v", err)
 		os.Exit(1)
 	}
 
