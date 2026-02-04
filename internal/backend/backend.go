@@ -105,6 +105,9 @@ func NewManager(cfg *config.Config) (*Manager, error) {
 	m := &Manager{cfg: cfg}
 
 	// Register available backends based on platform
+	// Remote backend is always registered first (if configured, it takes priority)
+	m.backends = append(m.backends, NewRemoteBackend(cfg))
+
 	if platform.IsMacOS() {
 		m.backends = append(m.backends, NewColimaBackend(cfg))
 	}
@@ -142,7 +145,7 @@ func (m *Manager) selectBackend() (Backend, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("%w (tried: colima, lima)", ErrNoBackendAvailable)
+	return nil, fmt.Errorf("%w (tried: remote, colima, lima)", ErrNoBackendAvailable)
 }
 
 // Backend returns the selected backend.

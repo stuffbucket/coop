@@ -78,3 +78,132 @@ func BenchmarkGenerate(b *testing.B) {
 		Generate()
 	}
 }
+
+func TestValidateContainerName(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{"valid-name", false},
+		{"mycontainer", false},
+		{"test123", false},
+		{"a", false},
+		{"a-b", false},
+		{"", true},                       // empty
+		{"-invalid", true},               // starts with hyphen
+		{"invalid-", true},               // ends with hyphen
+		{"UPPERCASE", true},              // uppercase not allowed
+		{"has space", true},              // spaces not allowed
+		{"has/slash", true},              // slashes not allowed
+		{"has\\backslash", true},         // backslashes not allowed
+		{"../traversal", true},           // path traversal
+		{"..", true},                     // double dot
+		{".", true},                      // single dot
+		{"with@symbol", true},            // @ not allowed in DNS names
+		{string(make([]byte, 64)), true}, // too long
+	}
+
+	for _, tc := range tests {
+		err := ValidateContainerName(tc.name)
+		if tc.wantErr && err == nil {
+			t.Errorf("ValidateContainerName(%q) should have failed", tc.name)
+		} else if !tc.wantErr && err != nil {
+			t.Errorf("ValidateContainerName(%q) failed: %v", tc.name, err)
+		}
+	}
+}
+
+func TestValidateInstanceName(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{"valid-name", false},
+		{"MyInstance", false}, // uppercase allowed
+		{"test_123", false},   // underscores ok
+		{"", true},            // empty
+		{".", true},           // single dot
+		{"..", true},          // double dot
+		{"has/slash", true},
+		{"has\\backslash", true},
+		{string(make([]byte, 64)), true}, // too long
+	}
+
+	for _, tc := range tests {
+		err := ValidateInstanceName(tc.name)
+		if tc.wantErr && err == nil {
+			t.Errorf("ValidateInstanceName(%q) should have failed", tc.name)
+		} else if !tc.wantErr && err != nil {
+			t.Errorf("ValidateInstanceName(%q) failed: %v", tc.name, err)
+		}
+	}
+}
+
+func TestValidateRemoteName(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{"myremote", false},
+		{"remote-server", false},
+		{"", true},
+		{".", true},
+		{"..", true},
+		{"../evil", true},
+		{"has/slash", true},
+	}
+
+	for _, tc := range tests {
+		err := ValidateRemoteName(tc.name)
+		if tc.wantErr && err == nil {
+			t.Errorf("ValidateRemoteName(%q) should have failed", tc.name)
+		} else if !tc.wantErr && err != nil {
+			t.Errorf("ValidateRemoteName(%q) failed: %v", tc.name, err)
+		}
+	}
+}
+
+func TestValidateSnapshotName(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{"checkpoint1", false},
+		{"my-snapshot", false},
+		{"", true},
+		{".", true},
+		{"..", true},
+		{"../evil", true},
+	}
+
+	for _, tc := range tests {
+		err := ValidateSnapshotName(tc.name)
+		if tc.wantErr && err == nil {
+			t.Errorf("ValidateSnapshotName(%q) should have failed", tc.name)
+		} else if !tc.wantErr && err != nil {
+			t.Errorf("ValidateSnapshotName(%q) failed: %v", tc.name, err)
+		}
+	}
+}
+
+func TestValidateMountName(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{"work", false},
+		{"my-mount", false},
+		{"", true},
+		{".", true},
+		{"..", true},
+	}
+
+	for _, tc := range tests {
+		err := ValidateMountName(tc.name)
+		if tc.wantErr && err == nil {
+			t.Errorf("ValidateMountName(%q) should have failed", tc.name)
+		} else if !tc.wantErr && err != nil {
+			t.Errorf("ValidateMountName(%q) failed: %v", tc.name, err)
+		}
+	}
+}
