@@ -748,7 +748,7 @@ func hasRouteToSubnet(subnet string) bool {
 		// Connection refused or timeout means route exists
 		return true
 	}
-	conn.Close()
+	_ = conn.Close()
 	return true
 }
 
