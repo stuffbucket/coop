@@ -142,6 +142,7 @@ func versionCmd() {
 	if date != "unknown" {
 		fmt.Printf("  built:  %s\n", date)
 	}
+	fmt.Printf("  os:     %s/%s\n", runtime.GOOS, runtime.GOARCH)
 	fmt.Printf("  go:     %s\n", runtime.Version())
 }
 
