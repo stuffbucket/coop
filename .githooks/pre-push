@@ -1,16 +1,20 @@
 #!/bin/sh
-# Run local checks before push
+# Run fast local checks before push
+# Full CI runs on GitHub - this is just a quick sanity check
 set -e
 
 echo "Running pre-push checks..."
 
-# Lint with staticcheck (fast, local)
+# Quick lint with golangci-lint
 echo "→ Linting..."
-make lint
+golangci-lint run --fast-only
 
-# Build and test
-echo "→ Building and testing..."
-make build
-make test
+# Build to catch compile errors
+echo "→ Building..."
+go build ./...
+
+# Run short tests only (skip integration/slow tests)
+echo "→ Testing (short)..."
+go test -short ./...
 
 echo "✓ All pre-push checks passed"
