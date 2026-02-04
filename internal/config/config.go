@@ -97,6 +97,9 @@ type Settings struct {
 	// Network/discovery settings
 	Network NetworkSettings `json:"network,omitempty"`
 
+	// UI settings
+	UI UISettings `json:"ui,omitempty"`
+
 	// Logging settings
 	Log LogSettings `json:"log,omitempty"`
 
@@ -167,6 +170,13 @@ type NetworkSettings struct {
 	// HostsFile path to manage (default: /etc/hosts)
 	// Can be changed for testing or custom setups
 	HostsFile string `json:"hosts_file,omitempty"`
+}
+
+// UISettings configures user interface preferences.
+type UISettings struct {
+	// Theme sets the color scheme (default, solarized, dracula, gruvbox, nord)
+	// Default: "default"
+	Theme string `json:"theme,omitempty"`
 }
 
 // LimaSettings is deprecated. Use VMSettings instead.
@@ -282,6 +292,11 @@ func Load() (*Config, error) {
 		cfg.Settings.Network.HostsFile = "/etc/hosts"
 	}
 
+	// Apply defaults for UI settings
+	if cfg.Settings.UI.Theme == "" {
+		cfg.Settings.UI.Theme = "default"
+	}
+
 	// Apply defaults for empty Log settings after load
 	if cfg.Settings.Log.MaxSizeMB == 0 {
 		cfg.Settings.Log.MaxSizeMB = 10
@@ -323,6 +338,9 @@ func (c *Config) applyEnvOverrides() {
 	// Backward compat: COOP_LIMA_INSTANCE
 	if v := os.Getenv("COOP_LIMA_INSTANCE"); v != "" {
 		c.Settings.VM.Instance = v
+	}
+	if v := os.Getenv("COOP_THEME"); v != "" {
+		c.Settings.UI.Theme = v
 	}
 }
 

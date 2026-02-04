@@ -18,8 +18,93 @@ import (
 	"golang.org/x/term"
 )
 
+// Theme represents a color scheme for the UI.
+type Theme struct {
+	Name    string
+	Warning string // orange/yellow
+	Error   string // red
+	Success string // green
+	Muted   string // gray
+	Bold    string // for names/emphasis
+	Path    string // cyan/aqua
+	IP      string // yellow
+	Code    string // for inline code
+	Header  string // blue
+}
+
+// Predefined themes
+var (
+	ThemeDefault = Theme{
+		Name:    "default",
+		Warning: "214", // orange
+		Error:   "196", // red
+		Success: "82",  // green
+		Muted:   "245", // gray
+		Bold:    "212", // magenta
+		Path:    "cyan",
+		IP:      "220", // yellow
+		Code:    "212", // magenta
+		Header:  "39",  // blue
+	}
+
+	ThemeSolarized = Theme{
+		Name:    "solarized",
+		Warning: "136", // yellow
+		Error:   "160", // red
+		Success: "64",  // green
+		Muted:   "240", // base01
+		Bold:    "125", // magenta
+		Path:    "37",  // cyan
+		IP:      "136", // yellow
+		Code:    "33",  // blue
+		Header:  "33",  // blue
+	}
+
+	ThemeDracula = Theme{
+		Name:    "dracula",
+		Warning: "228", // yellow
+		Error:   "212", // pink
+		Success: "84",  // green
+		Muted:   "239", // comment gray
+		Bold:    "141", // purple
+		Path:    "117", // cyan
+		IP:      "228", // yellow
+		Code:    "141", // purple
+		Header:  "141", // purple
+	}
+
+	ThemeGruvbox = Theme{
+		Name:    "gruvbox",
+		Warning: "214", // orange
+		Error:   "167", // red
+		Success: "142", // green
+		Muted:   "243", // gray
+		Bold:    "175", // purple
+		Path:    "109", // aqua
+		IP:      "214", // orange
+		Code:    "175", // purple
+		Header:  "109", // aqua
+	}
+
+	ThemeNord = Theme{
+		Name:    "nord",
+		Warning: "221", // nord13 - yellow
+		Error:   "203", // nord11 - red
+		Success: "150", // nord14 - green
+		Muted:   "243", // nord3 - gray
+		Bold:    "139", // nord15 - purple
+		Path:    "116", // nord8 - cyan
+		IP:      "221", // nord13 - yellow
+		Code:    "109", // nord9 - blue
+		Header:  "109", // nord9 - blue
+	}
+
+	currentTheme = ThemeDefault
+)
+
 var (
 	// Styles for consistent visual language
+	// These are initialized with default theme and can be changed via SetTheme()
 	warningStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // orange
 	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // red
 	successStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))  // green
@@ -31,6 +116,7 @@ var (
 	statusRunning = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))  // green
 	statusStopped = lipgloss.NewStyle().Foreground(lipgloss.Color("245")) // gray
 	headerStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
+	codeStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Inline(true) // magenta, inline-friendly
 
 	// Logo color palette - gradient from cyan to magenta
 	logoStyle1 = lipgloss.NewStyle().Foreground(lipgloss.Color("51"))  // bright cyan
@@ -49,6 +135,63 @@ var (
 		ReportTimestamp: false,
 	})
 )
+
+// SetTheme applies a theme by reinitializing all style variables.
+func SetTheme(theme Theme) {
+	currentTheme = theme
+
+	// Reinitialize all styles with the new theme colors
+	warningStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Warning))
+	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Error))
+	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Success))
+	mutedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Muted))
+	boldStyle = lipgloss.NewStyle().Bold(true)
+	nameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Bold)).Bold(true)
+	pathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Path))
+	ipStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.IP))
+	statusRunning = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Success))
+	statusStopped = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Muted))
+	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(theme.Header))
+	codeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Code)).Inline(true)
+
+	// Logo gradient using theme colors
+	logoStyle1 = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Path))
+	logoStyle2 = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Header))
+	logoStyle3 = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Bold))
+	logoStyle4 = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Success))
+	logoStyle5 = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Warning))
+
+	// Help styles
+	cmdStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Bold)).Bold(true)
+	envStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Success))
+	exampleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Muted))
+}
+
+// GetTheme returns the currently active theme.
+func GetTheme() Theme {
+	return currentTheme
+}
+
+// ThemeByName returns a theme by name, or default if not found.
+func ThemeByName(name string) Theme {
+	switch name {
+	case "solarized":
+		return ThemeSolarized
+	case "dracula":
+		return ThemeDracula
+	case "gruvbox":
+		return ThemeGruvbox
+	case "nord":
+		return ThemeNord
+	default:
+		return ThemeDefault
+	}
+}
+
+// ListThemes returns all available theme names.
+func ListThemes() []string {
+	return []string{"default", "solarized", "dracula", "gruvbox", "nord"}
+}
 
 // IsInteractive returns true if stdin is a terminal.
 // Use this to gate interactive prompts.
@@ -193,6 +336,15 @@ func MutedText(s string) string {
 	return styled(mutedStyle, s)
 }
 
+// Code returns styled inline code/command text (like markdown backticks).
+// Uses inline-friendly styling that preserves surrounding text styles.
+func Code(s string) string {
+	if !IsTTY() {
+		return "`" + s + "`"
+	}
+	return codeStyle.Render("`" + s + "`")
+}
+
 // Confirm prompts the user for a yes/no confirmation.
 // Returns false if not interactive or user declines.
 func Confirm(title, description string) bool {
@@ -226,6 +378,107 @@ func ConfirmWithDefault(title, description string, defaultVal bool) bool {
 		return defaultVal
 	}
 	return Confirm(title, description)
+}
+
+// InfoDialog shows an informational dialog with details and confirmation.
+// Returns true if user confirms, false otherwise.
+type InfoDialog struct {
+	Title       string   // Main heading (what's happening)
+	Description string   // Brief context
+	Details     []string // Bullet points of what will happen
+	Options     []string // User options/alternatives
+	Recommended int      // Index of recommended option (0-based, -1 for none)
+	Question    string   // Confirmation question
+	Affirmative string   // Yes button text (default: "Yes")
+	Negative    string   // No button text (default: "No")
+}
+
+// Show displays the info dialog and returns the user's choice.
+func (d InfoDialog) Show() bool {
+	if !IsInteractive() {
+		return false
+	}
+
+	// Build the description content with styling
+	var content strings.Builder
+	if d.Description != "" {
+		content.WriteString(d.Description)
+		content.WriteString("\n\n")
+	}
+
+	if len(d.Details) > 0 {
+		// Styled "What happens" section header
+		headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
+		content.WriteString(headerStyle.Render("What happens:"))
+		content.WriteString("\n")
+		// Cyan bullets for details
+		bulletStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("51")) // bright cyan
+		for _, detail := range d.Details {
+			content.WriteString("  ")
+			content.WriteString(bulletStyle.Render("▸"))
+			content.WriteString(" ")
+			content.WriteString(detail)
+			content.WriteString("\n")
+		}
+	}
+
+	if len(d.Options) > 0 {
+		content.WriteString("\n")
+		// Styled "Your options" section header
+		headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
+		content.WriteString(headerStyle.Render("Your options:"))
+		content.WriteString("\n")
+
+		for i, opt := range d.Options {
+			content.WriteString("  ")
+			// Highlight recommended option in green
+			if d.Recommended == i {
+				recommendedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Bold(true) // green
+				content.WriteString(recommendedStyle.Render("★"))
+			} else {
+				// Regular yellow bullet for other options
+				bulletStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("220")) // yellow
+				content.WriteString(bulletStyle.Render("▸"))
+			}
+			content.WriteString(" ")
+			content.WriteString(opt)
+			content.WriteString("\n")
+		}
+	}
+
+	// Set defaults
+	affirmative := d.Affirmative
+	if affirmative == "" {
+		affirmative = "Yes"
+	}
+	negative := d.Negative
+	if negative == "" {
+		negative = "No"
+	}
+
+	question := d.Question
+	if question == "" {
+		question = d.Title
+	}
+
+	var confirmed bool
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title(question).
+				Description(content.String()).
+				Affirmative(affirmative).
+				Negative(negative).
+				Value(&confirmed),
+		),
+	)
+
+	err := form.Run()
+	if err != nil {
+		return false
+	}
+
+	return confirmed
 }
 
 // Select prompts the user to select from options.
