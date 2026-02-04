@@ -11,19 +11,30 @@ import (
 	"github.com/stuffbucket/coop/internal/config"
 	"github.com/stuffbucket/coop/internal/logging"
 	"github.com/stuffbucket/coop/internal/platform"
+	"github.com/stuffbucket/coop/internal/ui"
 )
 
 // Sentinel errors for VM operations.
 var (
 	// ErrVMNotRunning indicates the VM is not in a running state.
-	ErrVMNotRunning = errors.New("VM is not running")
+	ErrVMNotRunning = errors.New("platform for agent containers is not running")
 
 	// ErrNoBackendAvailable indicates no VM backend could be found or used.
-	ErrNoBackendAvailable = errors.New("no VM backend available")
+	ErrNoBackendAvailable = errors.New("no platform backend available (install colima or lima)")
 
 	// ErrAutoStartDisabled indicates the VM is stopped and auto_start is disabled.
-	ErrAutoStartDisabled = errors.New("VM is not running and auto_start is disabled")
+	ErrAutoStartDisabled = errors.New("platform for agent containers is not running - start it with: coop vm start")
 )
+
+// UserCancelError represents a user-initiated cancellation.
+// This is detected to show clean messages without error formatting.
+type UserCancelError struct {
+	Message string
+}
+
+func (e *UserCancelError) Error() string {
+	return e.Message
+}
 
 // Arch represents CPU architecture.
 type Arch string
@@ -186,7 +197,14 @@ func (m *Manager) GetIncusSocket() (string, error) {
 }
 
 // EnsureRunning ensures the VM is running.
+// If interactive is true, prompts user before starting.
 func (m *Manager) EnsureRunning() error {
+	return m.EnsureRunningWithPrompt(false)
+}
+
+// EnsureRunningWithPrompt ensures the VM is running.
+// If interactive is true and VM needs to be started, prompts user first.
+func (m *Manager) EnsureRunningWithPrompt(interactive bool) error {
 	status, err := m.Status()
 	if err != nil {
 		return err
@@ -197,7 +215,44 @@ func (m *Manager) EnsureRunning() error {
 	}
 
 	if !m.cfg.Settings.VM.AutoStart {
-		return ErrAutoStartDisabled
+		return &UserCancelError{
+			Message: fmt.Sprintf("Platform for agent containers is not running.\n\nStart it with: %s\nOr enable auto_start in ~/.config/coop/settings.json", ui.Code("coop vm start")),
+		}
+	}
+
+	// If interactive, prompt before starting
+	if interactive {
+		// Check if we can actually show the dialog
+		if !ui.IsInteractive() {
+			// Not in a terminal - return user-friendly cancel
+			return &UserCancelError{
+				Message: fmt.Sprintf("Platform for agent containers is not running. Start it with: %s", ui.Code("coop vm start")),
+			}
+		}
+
+		confirmed := ui.InfoDialog{
+			Title:       "Start Platform",
+			Description: "Coop needs a Linux environment running to manage your agent containers.",
+			Details: []string{
+				fmt.Sprintf("Spins up %s in the background", m.backend.Name()),
+				"First-time setup downloads ~100 MB (one-time only)",
+				"Ready in 30-60 seconds on a fast connection",
+			},
+			Options: []string{
+				"Start now and continue with your command",
+				fmt.Sprintf("Skip for now (start later with: %s)", ui.Code("coop vm start")),
+			},
+			Recommended: 0, // First option is recommended
+			Question:    "Start the platform?",
+			Affirmative: "Start",
+			Negative:    "Skip",
+		}.Show()
+
+		if !confirmed {
+			return &UserCancelError{
+				Message: fmt.Sprintf("Skipped starting platform. Run %s when ready.", ui.Code("coop vm start")),
+			}
+		}
 	}
 
 	return m.Start()

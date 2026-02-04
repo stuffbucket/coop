@@ -250,17 +250,67 @@ func (c *ColimaBackend) GetIncusSocket() (string, error) {
 	}
 
 	profile := c.profileName()
+
+	// Try to query Colima for the actual socket location
+	if socketPath, err := c.queryColimaSocket(profile); err == nil {
+		return "unix://" + socketPath, nil
+	}
+
+	// Fallback: try common locations
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
 
-	// Colima stores socket at ~/.colima/<profile>/incus.sock
-	socketPath := filepath.Join(home, ".colima", profile, "incus.sock")
-
-	if _, err := os.Stat(socketPath); err != nil {
-		return "", fmt.Errorf("incus socket not found at %s (is Colima running?): %w", socketPath, err)
+	possiblePaths := []string{
+		// New XDG-compliant path (Colima 0.6.0+)
+		filepath.Join(home, ".config", "colima", profile, "incus.sock"),
+		// Legacy path (Colima < 0.6.0)
+		filepath.Join(home, ".colima", profile, "incus.sock"),
 	}
 
-	return "unix://" + socketPath, nil
+	for _, socketPath := range possiblePaths {
+		if _, err := os.Stat(socketPath); err == nil {
+			return "unix://" + socketPath, nil
+		}
+	}
+
+	return "", fmt.Errorf("incus socket not found (is Colima running?)\nTried locations:\n  %s\n  %s\nCheck: colima list",
+		possiblePaths[0], possiblePaths[1])
+}
+
+// queryColimaSocket asks Colima where its socket is located.
+func (c *ColimaBackend) queryColimaSocket(profile string) (string, error) {
+	log := logging.Get()
+	cmd := exec.Command("colima", "list", "--json")
+	log.Cmd("colima", []string{"list", "--json"})
+
+	output, err := cmd.Output()
+	if err != nil {
+		log.CmdOutput("colima", output, err)
+		return "", err
+	}
+	log.CmdOutput("colima", output, nil)
+
+	// Parse JSON output (Colima outputs one JSON object per line)
+	decoder := json.NewDecoder(bytes.NewReader(output))
+	for decoder.More() {
+		var inst struct {
+			Name   string `json:"name"`
+			Status string `json:"status"`
+			Socket string `json:"socket"`
+		}
+		if err := decoder.Decode(&inst); err != nil {
+			continue
+		}
+		if inst.Name == profile {
+			if inst.Socket != "" {
+				return inst.Socket, nil
+			}
+			// Socket field might not be populated in older Colima versions
+			break
+		}
+	}
+
+	return "", fmt.Errorf("socket path not found in colima output")
 }
