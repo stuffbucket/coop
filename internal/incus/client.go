@@ -11,9 +11,9 @@ import (
 
 	incus "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/shared/api"
+	"github.com/stuffbucket/coop/internal/backend"
 	"github.com/stuffbucket/coop/internal/config"
 	"github.com/stuffbucket/coop/internal/platform"
-	"github.com/stuffbucket/coop/internal/vm"
 )
 
 // WaitCondition represents a condition to wait for.
@@ -91,8 +91,8 @@ func ConnectWithConfig(cfg *config.Config) (*Client, error) {
 	} else {
 		switch platform {
 		case PlatformMacOS:
-			// Use VM manager to get socket and ensure VM is running
-			vmMgr, err := vm.NewManager(cfg)
+			// Use backend manager to get socket and ensure VM is running
+			vmMgr, err := backend.NewManager(cfg)
 			if err != nil {
 				return nil, fmt.Errorf("vm setup failed: %w", err)
 			}
@@ -641,4 +641,3 @@ func (c *Client) PublishSnapshot(containerName, snapshotName, alias string) (str
 
 	return fingerprint, nil
 }
-

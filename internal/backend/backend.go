@@ -1,5 +1,5 @@
-// Package vm provides an abstraction layer for VM backends (Colima, Lima).
-package vm
+// Package backend provides an abstraction layer for Incus backends (Colima, Lima, native, remote).
+package backend
 
 import (
 	"errors"
@@ -38,8 +38,8 @@ const (
 type VMType string
 
 const (
-	VMTypeVZ   VMType = "vz"    // Apple Virtualization.framework
-	VMTypeQEMU VMType = "qemu"  // QEMU emulation
+	VMTypeVZ   VMType = "vz"   // Apple Virtualization.framework
+	VMTypeQEMU VMType = "qemu" // QEMU emulation
 )
 
 // Backend represents a VM management backend.
