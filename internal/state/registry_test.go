@@ -24,6 +24,7 @@ func TestRegistryBasic(t *testing.T) {
 	source := reg.GetSource("my-image")
 	if source == nil {
 		t.Fatal("GetSource returned nil")
+		return // unreachable, satisfies static analysis
 	}
 	if source.Instance != "test-container" {
 		t.Errorf("Instance = %q, want %q", source.Instance, "test-container")
@@ -54,6 +55,7 @@ func TestRegistryPersistence(t *testing.T) {
 	source := reg2.GetSource("dev-image")
 	if source == nil {
 		t.Fatal("Image record not persisted")
+		return // unreachable, satisfies static analysis
 	}
 	if source.Instance != "mydev" {
 		t.Errorf("Instance = %q, want %q", source.Instance, "mydev")

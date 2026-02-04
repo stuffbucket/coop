@@ -295,7 +295,11 @@ func (c *Client) ExecCommand(name string, command []string) (int, error) {
 	}
 
 	opAPI := op.Get()
-	return int(opAPI.Metadata["return"].(float64)), nil
+	returnVal, ok := opAPI.Metadata["return"].(float64)
+	if !ok {
+		return -1, fmt.Errorf("unexpected return type in exec metadata")
+	}
+	return int(returnVal), nil
 }
 
 // ExecCommandWithOutput executes a command and returns stdout as a string.

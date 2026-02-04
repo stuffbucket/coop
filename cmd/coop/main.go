@@ -1585,6 +1585,7 @@ func imageLineageCmd(args []string) {
 		ui.Warnf("No lineage recorded for %s", alias)
 		ui.Muted("(Image may have been imported or built externally)")
 		os.Exit(1)
+		return // unreachable, satisfies static analysis
 	}
 
 	fmt.Printf("%s  %s\n", ui.Bold("Image:"), ui.Name(alias))

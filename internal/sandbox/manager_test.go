@@ -96,11 +96,13 @@ func TestNewManagerWithConfigStoresConfig(t *testing.T) {
 	}
 	if mgr == nil {
 		t.Fatal("NewManagerWithConfig returned nil manager")
+		return // unreachable, satisfies static analysis
 	}
 
 	// Verify the config was stored
 	if mgr.config == nil {
 		t.Fatal("Manager.config is nil")
+		return // unreachable, satisfies static analysis
 	}
 
 	// Verify the specific config values were preserved

@@ -19,10 +19,10 @@ build:
 test:
 	$(GO) test -race -cover ./...
 
-# Lint with staticcheck
+# Lint with golangci-lint (matches CI)
 lint:
-	@command -v staticcheck >/dev/null 2>&1 || { echo "Install: brew install staticcheck"; exit 1; }
-	staticcheck ./...
+	@command -v golangci-lint >/dev/null 2>&1 || { echo "Install: brew install golangci-lint"; exit 1; }
+	golangci-lint run
 
 # Vulnerability scan (govulncheck)
 vuln:
