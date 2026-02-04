@@ -39,6 +39,36 @@ func (c *ColimaBackend) profileName() string {
 	return "incus"
 }
 
+// validateProfileName checks that a profile name is safe for use in file paths.
+// Prevents path traversal attacks when constructing socket paths.
+func validateProfileName(name string) error {
+	if name == "" {
+		return fmt.Errorf("profile name cannot be empty")
+	}
+	if name == "." || name == ".." {
+		return fmt.Errorf("invalid profile name: %q", name)
+	}
+	if strings.ContainsAny(name, "/\\\x00") {
+		return fmt.Errorf("profile name contains invalid characters: %q", name)
+	}
+	return nil
+}
+
+// validateSocketPath checks that a socket path is safe and absolute.
+func validateSocketPath(path string) error {
+	if path == "" {
+		return fmt.Errorf("socket path cannot be empty")
+	}
+	cleaned := filepath.Clean(path)
+	if !filepath.IsAbs(cleaned) {
+		return fmt.Errorf("socket path must be absolute: %q", path)
+	}
+	if strings.Contains(cleaned, "..") {
+		return fmt.Errorf("socket path contains path traversal: %q", path)
+	}
+	return nil
+}
+
 // validateConfig checks for invalid VM configuration combinations.
 func (c *ColimaBackend) validateConfig() error {
 	vm := c.cfg.Settings.VM
@@ -250,17 +280,76 @@ func (c *ColimaBackend) GetIncusSocket() (string, error) {
 	}
 
 	profile := c.profileName()
+
+	// Validate profile name before using in paths
+	if err := validateProfileName(profile); err != nil {
+		return "", fmt.Errorf("invalid VM instance name: %w", err)
+	}
+
+	// Try to query Colima for the actual socket location
+	if socketPath, err := c.queryColimaSocket(profile); err == nil {
+		// Validate and clean the returned path
+		if err := validateSocketPath(socketPath); err != nil {
+			return "", fmt.Errorf("invalid socket path from colima: %w", err)
+		}
+		return "unix://" + filepath.Clean(socketPath), nil
+	}
+
+	// Fallback: try common locations
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
 
-	// Colima stores socket at ~/.colima/<profile>/incus.sock
-	socketPath := filepath.Join(home, ".colima", profile, "incus.sock")
-
-	if _, err := os.Stat(socketPath); err != nil {
-		return "", fmt.Errorf("incus socket not found at %s (is Colima running?): %w", socketPath, err)
+	possiblePaths := []string{
+		// New XDG-compliant path (Colima 0.6.0+)
+		filepath.Clean(filepath.Join(home, ".config", "colima", profile, "incus.sock")),
+		// Legacy path (Colima < 0.6.0)
+		filepath.Clean(filepath.Join(home, ".colima", profile, "incus.sock")),
 	}
 
-	return "unix://" + socketPath, nil
+	for _, socketPath := range possiblePaths {
+		if _, err := os.Stat(socketPath); err == nil {
+			return "unix://" + socketPath, nil
+		}
+	}
+
+	return "", fmt.Errorf("incus socket not found (is Colima running?)\nTried locations:\n  %s\n  %s\nCheck: colima list",
+		possiblePaths[0], possiblePaths[1])
+}
+
+// queryColimaSocket asks Colima where its socket is located.
+func (c *ColimaBackend) queryColimaSocket(profile string) (string, error) {
+	log := logging.Get()
+	cmd := exec.Command("colima", "list", "--json")
+	log.Cmd("colima", []string{"list", "--json"})
+
+	output, err := cmd.Output()
+	if err != nil {
+		log.CmdOutput("colima", output, err)
+		return "", err
+	}
+	log.CmdOutput("colima", output, nil)
+
+	// Parse JSON output (Colima outputs one JSON object per line)
+	decoder := json.NewDecoder(bytes.NewReader(output))
+	for decoder.More() {
+		var inst struct {
+			Name   string `json:"name"`
+			Status string `json:"status"`
+			Socket string `json:"socket"`
+		}
+		if err := decoder.Decode(&inst); err != nil {
+			continue
+		}
+		if inst.Name == profile {
+			if inst.Socket != "" {
+				return inst.Socket, nil
+			}
+			// Socket field might not be populated in older Colima versions
+			break
+		}
+	}
+
+	return "", fmt.Errorf("socket path not found in colima output")
 }
