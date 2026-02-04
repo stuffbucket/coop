@@ -39,6 +39,36 @@ func (c *ColimaBackend) profileName() string {
 	return "incus"
 }
 
+// validateProfileName checks that a profile name is safe for use in file paths.
+// Prevents path traversal attacks when constructing socket paths.
+func validateProfileName(name string) error {
+	if name == "" {
+		return fmt.Errorf("profile name cannot be empty")
+	}
+	if name == "." || name == ".." {
+		return fmt.Errorf("invalid profile name: %q", name)
+	}
+	if strings.ContainsAny(name, "/\\\x00") {
+		return fmt.Errorf("profile name contains invalid characters: %q", name)
+	}
+	return nil
+}
+
+// validateSocketPath checks that a socket path is safe and absolute.
+func validateSocketPath(path string) error {
+	if path == "" {
+		return fmt.Errorf("socket path cannot be empty")
+	}
+	cleaned := filepath.Clean(path)
+	if !filepath.IsAbs(cleaned) {
+		return fmt.Errorf("socket path must be absolute: %q", path)
+	}
+	if strings.Contains(cleaned, "..") {
+		return fmt.Errorf("socket path contains path traversal: %q", path)
+	}
+	return nil
+}
+
 // validateConfig checks for invalid VM configuration combinations.
 func (c *ColimaBackend) validateConfig() error {
 	vm := c.cfg.Settings.VM
@@ -251,9 +281,18 @@ func (c *ColimaBackend) GetIncusSocket() (string, error) {
 
 	profile := c.profileName()
 
+	// Validate profile name before using in paths
+	if err := validateProfileName(profile); err != nil {
+		return "", fmt.Errorf("invalid VM instance name: %w", err)
+	}
+
 	// Try to query Colima for the actual socket location
 	if socketPath, err := c.queryColimaSocket(profile); err == nil {
-		return "unix://" + socketPath, nil
+		// Validate and clean the returned path
+		if err := validateSocketPath(socketPath); err != nil {
+			return "", fmt.Errorf("invalid socket path from colima: %w", err)
+		}
+		return "unix://" + filepath.Clean(socketPath), nil
 	}
 
 	// Fallback: try common locations
@@ -264,9 +303,9 @@ func (c *ColimaBackend) GetIncusSocket() (string, error) {
 
 	possiblePaths := []string{
 		// New XDG-compliant path (Colima 0.6.0+)
-		filepath.Join(home, ".config", "colima", profile, "incus.sock"),
+		filepath.Clean(filepath.Join(home, ".config", "colima", profile, "incus.sock")),
 		// Legacy path (Colima < 0.6.0)
-		filepath.Join(home, ".colima", profile, "incus.sock"),
+		filepath.Clean(filepath.Join(home, ".colima", profile, "incus.sock")),
 	}
 
 	for _, socketPath := range possiblePaths {
