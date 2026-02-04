@@ -96,7 +96,8 @@ func ConnectWithConfig(cfg *config.Config) (*Client, error) {
 			if err != nil {
 				return nil, fmt.Errorf("vm setup failed: %w", err)
 			}
-			if err := vmMgr.EnsureRunning(); err != nil {
+			// Always prompt interactively - let EnsureRunningWithPrompt handle terminal detection
+			if err := vmMgr.EnsureRunningWithPrompt(true); err != nil {
 				return nil, fmt.Errorf("vm start failed: %w", err)
 			}
 			socket, err := vmMgr.GetIncusSocket()

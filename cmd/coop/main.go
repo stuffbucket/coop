@@ -3,6 +3,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -13,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/stuffbucket/coop/internal/backend"
 	"github.com/stuffbucket/coop/internal/config"
 	"github.com/stuffbucket/coop/internal/doctor"
@@ -49,6 +52,10 @@ func main() {
 	// Initialize logging with loaded config
 	initLogging(appConfig)
 	defer func() { _ = logging.Close() }()
+
+	// Apply UI theme from config
+	theme := ui.ThemeByName(appConfig.Settings.UI.Theme)
+	ui.SetTheme(theme)
 
 	if len(os.Args) < 2 {
 		printUsage(false)
@@ -88,6 +95,8 @@ func main() {
 		snapshotCmd(os.Args[2:])
 	case "config":
 		configCmd(os.Args[2:])
+	case "theme":
+		themeCmd(os.Args[2:])
 	case "image":
 		imageCmd(os.Args[2:])
 	case "state":
@@ -251,7 +260,21 @@ func printUsage(showAll bool) {
 func mustManager() *sandbox.Manager {
 	mgr, err := sandbox.NewManagerWithConfig(appConfig)
 	if err != nil {
-		ui.Errorf("Error: %v", err)
+		// Log full error context for debugging
+		log := logging.Get()
+		log.Debug("Manager creation failed", "error", err)
+
+		// Check if this is a user cancellation - show clean message
+		var cancelErr *backend.UserCancelError
+		if errors.As(err, &cancelErr) {
+			// Clean user-facing message
+			fmt.Fprintln(os.Stderr)
+			ui.Muted(cancelErr.Message)
+			fmt.Fprintln(os.Stderr)
+		} else {
+			// Regular error with full context
+			ui.Errorf("Error: %v", err)
+		}
 		os.Exit(1)
 	}
 	return mgr
@@ -755,6 +778,254 @@ func configCmd(args []string) {
 		fmt.Printf("  Disk:       %d GB\n", appConfig.Settings.VM.DiskGB)
 		fmt.Printf("  Auto-start: %t\n", appConfig.Settings.VM.AutoStart)
 	}
+}
+
+func themeCmd(args []string) {
+	if len(args) == 0 {
+		// Show current theme and available themes
+		current := ui.GetTheme()
+		fmt.Println(ui.Bold("Coop Themes"))
+		fmt.Println(strings.Repeat("=", 40))
+		fmt.Println()
+
+		fmt.Printf("%s %s\n\n", ui.Header("Current theme:"), ui.Name(current.Name))
+
+		fmt.Println(ui.Header("Available themes:"))
+		for _, themeName := range ui.ListThemes() {
+			marker := "  "
+			if themeName == current.Name {
+				marker = ui.SuccessText("▸ ")
+			}
+			fmt.Printf("%s%s\n", marker, themeName)
+		}
+		fmt.Println()
+		ui.Muted("Interactive picker: coop theme preview")
+		ui.Muted("Preview specific theme: coop theme preview <name>")
+		ui.Mutedf("Set in config: %s", ui.Code(`{"ui": {"theme": "dracula"}}`))
+		ui.Mutedf("Or set via env: %s", ui.Code("COOP_THEME=dracula coop list"))
+		fmt.Println()
+		return
+	}
+
+	subcommand := args[0]
+	switch subcommand {
+	case "preview":
+		if len(args) < 2 {
+			// Interactive mode - no theme specified
+			previewTheme("")
+		} else {
+			// Static preview of specific theme
+			previewTheme(args[1])
+		}
+	case "list":
+		for _, name := range ui.ListThemes() {
+			fmt.Println(name)
+		}
+	default:
+		ui.Errorf("Unknown theme subcommand: %s", subcommand)
+		ui.Muted("Usage: coop theme [preview <name>|list]")
+		os.Exit(1)
+	}
+}
+
+func previewTheme(themeName string) {
+	// If specific theme requested, show static preview
+	if themeName != "" {
+		showStaticThemePreview(themeName)
+		return
+	}
+
+	// Interactive theme picker
+	originalTheme := ui.GetTheme()
+	var selectedTheme string
+	var confirmed bool
+
+	// Build theme options with color swatches
+	themes := []struct {
+		name  string
+		theme ui.Theme
+	}{
+		{"default", ui.ThemeDefault},
+		{"solarized", ui.ThemeSolarized},
+		{"dracula", ui.ThemeDracula},
+		{"gruvbox", ui.ThemeGruvbox},
+		{"nord", ui.ThemeNord},
+	}
+
+	options := make([]huh.Option[string], len(themes))
+	for i, t := range themes {
+		// Create color swatch display with theme name
+		swatch := buildColorSwatch(t.theme)
+		label := fmt.Sprintf("%-12s %s", t.name, swatch)
+		options[i] = huh.NewOption(label, t.name)
+	}
+
+	// Theme selection
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, ui.Bold("Interactive Theme Picker"))
+	ui.Muted("Use ↑↓ arrows to navigate, Enter to preview")
+	fmt.Fprintln(os.Stderr)
+
+	selectForm := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Select a theme to preview").
+				Options(options...).
+				Value(&selectedTheme),
+		),
+	).WithShowHelp(false)
+
+	err := selectForm.Run()
+	if err != nil {
+		// User cancelled - restore original
+		ui.SetTheme(originalTheme)
+		fmt.Fprintln(os.Stderr)
+		ui.Muted("Theme selection cancelled")
+		fmt.Fprintln(os.Stderr)
+		return
+	}
+
+	// Apply selected theme for preview
+	selectedThemeObj := ui.ThemeByName(selectedTheme)
+	ui.SetTheme(selectedThemeObj)
+
+	// Show live preview with the selected theme
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, strings.Repeat("─", 50))
+	showThemePreview(selectedThemeObj)
+	fmt.Fprintln(os.Stderr, strings.Repeat("─", 50))
+	fmt.Fprintln(os.Stderr)
+
+	// Confirmation dialog
+	confirmForm := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title(fmt.Sprintf("Apply the '%s' theme?", selectedTheme)).
+				Description("This will update your settings.json").
+				Affirmative("Apply").
+				Negative("Cancel").
+				Value(&confirmed),
+		),
+	)
+
+	err = confirmForm.Run()
+	if err != nil || !confirmed {
+		// Restore original theme
+		ui.SetTheme(originalTheme)
+		fmt.Fprintln(os.Stderr)
+		ui.Muted("Theme not applied - keeping current theme")
+		fmt.Fprintln(os.Stderr)
+		return
+	}
+
+	// Apply theme permanently
+	appConfig.Settings.UI.Theme = selectedTheme
+	if err := appConfig.Save(); err != nil {
+		ui.Errorf("Failed to save theme: %v", err)
+		ui.SetTheme(originalTheme)
+		return
+	}
+
+	fmt.Fprintln(os.Stderr)
+	ui.Successf("Theme %s applied!", ui.Name(selectedTheme))
+	ui.Mutedf("Saved to %s", ui.Path(appConfig.Dirs.SettingsFile))
+	fmt.Fprintln(os.Stderr)
+}
+
+func buildColorSwatch(theme ui.Theme) string {
+	// Create a compact color swatch showing the theme's palette
+	// Each color gets a small "chip" with background for contrast
+	swatch := make([]string, 0)
+
+	// Use double-width block for better visibility
+	block := "██"
+
+	// Dark background for all swatches to ensure visibility
+	bg := lipgloss.Color("235") // dark gray
+
+	// Create styled chips for each color in the theme with backgrounds
+	successChip := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(theme.Success)).
+		Background(bg).
+		Render(block)
+
+	warningChip := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(theme.Warning)).
+		Background(bg).
+		Render(block)
+
+	errorChip := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(theme.Error)).
+		Background(bg).
+		Render(block)
+
+	boldChip := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(theme.Bold)).
+		Background(bg).
+		Render(block)
+
+	pathChip := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(theme.Path)).
+		Background(bg).
+		Render(block)
+
+	headerChip := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(theme.Header)).
+		Background(bg).
+		Render(block)
+
+	swatch = append(swatch, successChip, warningChip, errorChip, boldChip, pathChip, headerChip)
+
+	return strings.Join(swatch, " ")
+}
+
+func showThemePreview(theme ui.Theme) {
+	fmt.Fprintln(os.Stderr, ui.Header("Preview:"))
+	fmt.Fprintln(os.Stderr)
+
+	// Show color samples
+	fmt.Fprintln(os.Stderr, "  ", ui.SuccessText("✓ Success message"))
+	fmt.Fprintln(os.Stderr, "  ", ui.WarningText("⚠ Warning message"))
+	fmt.Fprintln(os.Stderr, "  ", ui.ErrorText("✗ Error message"))
+	fmt.Fprintln(os.Stderr, "  ", ui.Name("container-name"), ui.MutedText("- subtle info"))
+	fmt.Fprintln(os.Stderr, "  ", ui.Path("/path/to/file"), ui.IP("192.168.1.1"))
+	fmt.Fprintln(os.Stderr, "  ", "Run command:", ui.Code("coop vm start"))
+}
+
+func showStaticThemePreview(themeName string) {
+	theme := ui.ThemeByName(themeName)
+	ui.SetTheme(theme)
+
+	fmt.Println()
+	fmt.Printf("%s %s\n", ui.Header("Theme:"), ui.Name(theme.Name))
+	fmt.Println(strings.Repeat("─", 40))
+	fmt.Println()
+
+	// Show color samples
+	fmt.Println(ui.Header("Colors:"))
+	fmt.Printf("  %s  %s\n", ui.Bold("Bold/Names:"), ui.Name("example-container"))
+	fmt.Printf("  %s  %s\n", ui.Bold("Success:"), ui.SuccessText("✓ Operation successful"))
+	fmt.Printf("  %s  %s\n", ui.Bold("Warning:"), ui.WarningText("⚠ Warning message"))
+	fmt.Printf("  %s  %s\n", ui.Bold("Error:"), ui.ErrorText("✗ Error message"))
+	fmt.Printf("  %s  %s\n", ui.Bold("Muted:"), ui.MutedText("subtle information"))
+	fmt.Printf("  %s  %s\n", ui.Bold("Path:"), ui.Path("/path/to/file"))
+	fmt.Printf("  %s  %s\n", ui.Bold("IP:"), ui.IP("192.168.1.100"))
+	fmt.Printf("  %s  %s\n", ui.Bold("Code:"), ui.Code("coop vm start"))
+	fmt.Println()
+
+	// Show a sample table
+	fmt.Println(ui.Header("Sample Table:"))
+	table := ui.NewTable(20, 10, 15)
+	table.SetHeaders("NAME", "STATUS", "IP")
+	table.AddRow(ui.Name("agent-01"), ui.Status("Running"), ui.IP("10.0.0.5"))
+	table.AddRow(ui.MutedText("agent-02"), ui.Status("Stopped"), ui.MutedText("-"))
+	fmt.Print(table.Render())
+	fmt.Println()
+
+	ui.Muted("To use this theme permanently:")
+	fmt.Printf("  • Edit %s\n", ui.Path(appConfig.Dirs.SettingsFile))
+	fmt.Printf("  • Set: %s\n", ui.Code(fmt.Sprintf(`{"ui": {"theme": "%s"}}`, themeName)))
+	fmt.Println()
 }
 
 func envCmd(args []string) {
