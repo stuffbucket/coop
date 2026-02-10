@@ -1,0 +1,9 @@
+# Known upstream vulnerabilities with no available fix.
+# Each line is a Go vulnerability ID (GO-YYYY-NNNN).
+# Checked by scripts/govulncheck.sh — suppressed IDs are
+# reported but do not fail the build.
+
+# Incus local privilege escalation via custom storage volumes
+# https://pkg.go.dev/vuln/GO-2025-4115
+# CVE-2025-0540 — upstream: github.com/lxc/incus — no fix released
+GO-2025-4115
