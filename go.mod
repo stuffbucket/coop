@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/log v0.4.2
 	github.com/cyphar/filepath-securejoin v0.6.1
 	github.com/gen2brain/beeep v0.11.2
-	github.com/go-git/go-git/v5 v5.16.4
+	github.com/go-git/go-git/v5 v5.16.5
 	github.com/lxc/incus/v6 v6.21.0
 	github.com/pquerna/otp v1.5.0
 	golang.org/x/crypto v0.47.0
