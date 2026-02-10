@@ -53,10 +53,9 @@ coverage:
 	$(GO) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
 
-# Vulnerability scan (govulncheck)
+# Vulnerability scan (govulncheck with suppression list)
 vuln:
-	@command -v govulncheck >/dev/null 2>&1 || { echo "Install: go install golang.org/x/vuln/cmd/govulncheck@latest"; exit 1; }
-	govulncheck ./...
+	@./scripts/govulncheck.sh
 
 # Clean build artifacts
 clean:
