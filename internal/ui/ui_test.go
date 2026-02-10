@@ -124,8 +124,8 @@ func TestTableWithANSICells(t *testing.T) {
 	tbl.SetHeaders("NAME", "STATUS")
 
 	// Simulate styled cells (ANSI codes)
-	styledName := "\x1b[1mtest\x1b[0m"      // bold "test" - visible width 4
-	styledStatus := "\x1b[32mOK\x1b[0m"     // green "OK" - visible width 2
+	styledName := "\x1b[1mtest\x1b[0m"  // bold "test" - visible width 4
+	styledStatus := "\x1b[32mOK\x1b[0m" // green "OK" - visible width 2
 
 	tbl.AddRow(styledName, styledStatus)
 
@@ -150,11 +150,11 @@ func TestTableWithANSICells(t *testing.T) {
 	}
 }
 
-func TestLogoStructure(t *testing.T) {
-	// When not a TTY, Logo returns empty
+func TestBannerStructure(t *testing.T) {
+	// When not a TTY, Banner returns empty
 	// We can't easily test the colored version without mocking isTTY
-	// but we can verify the Logo function doesn't panic
-	_ = Logo()
+	// but we can verify the Banner function doesn't panic
+	_ = Banner()
 
 	// Tagline should exist
 	tagline := Tagline("")

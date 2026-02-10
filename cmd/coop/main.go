@@ -213,7 +213,7 @@ func printUsage(showAll bool) {
 	builder := ui.NewHelpBuilder(state)
 	dashboard := ui.NewDashboardProvider(state, version, "")
 
-	logo := ui.Logo()
+	logo := ui.Banner()
 	if logo != "" {
 		fmt.Print(logo)
 	}
