@@ -118,13 +118,6 @@ var (
 	headerStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
 	codeStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Inline(true) // magenta, inline-friendly
 
-	// Logo color palette - gradient from cyan to magenta
-	logoStyle1 = lipgloss.NewStyle().Foreground(lipgloss.Color("51"))  // bright cyan
-	logoStyle2 = lipgloss.NewStyle().Foreground(lipgloss.Color("87"))  // light cyan
-	logoStyle3 = lipgloss.NewStyle().Foreground(lipgloss.Color("123")) // cyan-blue
-	logoStyle4 = lipgloss.NewStyle().Foreground(lipgloss.Color("159")) // light blue
-	logoStyle5 = lipgloss.NewStyle().Foreground(lipgloss.Color("183")) // lavender
-
 	// Help styles
 	cmdStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true) // magenta
 	envStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))            // green
@@ -153,13 +146,6 @@ func SetTheme(theme Theme) {
 	statusStopped = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Muted))
 	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(theme.Header))
 	codeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Code)).Inline(true)
-
-	// Logo gradient using theme colors
-	logoStyle1 = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Path))
-	logoStyle2 = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Header))
-	logoStyle3 = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Bold))
-	logoStyle4 = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Success))
-	logoStyle5 = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Warning))
 
 	// Help styles
 	cmdStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Bold)).Bold(true)
@@ -537,36 +523,6 @@ func WarningBox(title, content string) string {
 		return titleStyle.Render("⚠ "+title) + "\n" + style.Render(content)
 	}
 	return style.Render(content)
-}
-
-// Logo returns the coop ASCII art logo with gradient coloring.
-func Logo() string {
-	if !IsTTY() {
-		return ""
-	}
-
-	// ASCII art logo - clean tech style
-	lines := []string{
-		`                         `,
-		`  ██████╗ ██████╗  ██████╗ ██████╗  `,
-		` ██╔════╝██╔═══██╗██╔═══██╗██╔══██╗ `,
-		` ██║     ██║   ██║██║   ██║██████╔╝ `,
-		` ██║     ██║   ██║██║   ██║██╔═══╝  `,
-		` ╚██████╗╚██████╔╝╚██████╔╝██║      `,
-		`  ╚═════╝ ╚═════╝  ╚═════╝ ╚═╝      `,
-		`                                     `,
-	}
-
-	styles := []lipgloss.Style{logoStyle1, logoStyle1, logoStyle2, logoStyle3, logoStyle4, logoStyle5, logoStyle5, logoStyle5}
-
-	var result strings.Builder
-	for i, line := range lines {
-		style := styles[i%len(styles)]
-		result.WriteString(style.Render(line))
-		result.WriteString("\n")
-	}
-
-	return result.String()
 }
 
 // Tagline returns the styled tagline with optional version.
