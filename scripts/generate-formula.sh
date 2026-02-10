@@ -66,7 +66,7 @@ class Coop < Formula
   version "${VERSION}"
   license "MIT"
 
-  depends_on "colima" => "< 0.7.0"
+  depends_on "colima"
 
   on_macos do
     on_arm do
