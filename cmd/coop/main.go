@@ -20,6 +20,7 @@ import (
 	"github.com/stuffbucket/coop/internal/config"
 	"github.com/stuffbucket/coop/internal/doctor"
 	"github.com/stuffbucket/coop/internal/logging"
+	"github.com/stuffbucket/coop/internal/names"
 	"github.com/stuffbucket/coop/internal/sandbox"
 	"github.com/stuffbucket/coop/internal/state"
 	"github.com/stuffbucket/coop/internal/ui"
@@ -280,6 +281,33 @@ func mustManager() *sandbox.Manager {
 	return mgr
 }
 
+// mustValidContainerName validates a container name and exits with an error if invalid.
+func mustValidContainerName(name string) string {
+	if err := names.ValidateContainerName(name); err != nil {
+		ui.Errorf("Error: %v", err)
+		os.Exit(1)
+	}
+	return name
+}
+
+// mustValidSnapshotName validates a snapshot name and exits with an error if invalid.
+func mustValidSnapshotName(name string) string {
+	if err := names.ValidateSnapshotName(name); err != nil {
+		ui.Errorf("Error: %v", err)
+		os.Exit(1)
+	}
+	return name
+}
+
+// mustValidMountName validates a mount name and exits with an error if invalid.
+func mustValidMountName(name string) string {
+	if err := names.ValidateMountName(name); err != nil {
+		ui.Errorf("Error: %v", err)
+		os.Exit(1)
+	}
+	return name
+}
+
 func initCmd(args []string) {
 	dirs := config.GetDirectories()
 
@@ -402,7 +430,7 @@ func startCmd(args []string) {
 		os.Exit(1)
 	}
 
-	name := args[0]
+	name := mustValidContainerName(args[0])
 
 	mgr := mustManager()
 
@@ -433,7 +461,7 @@ func stopCmd(args []string) {
 		os.Exit(1)
 	}
 
-	name := fs.Arg(0)
+	name := mustValidContainerName(fs.Arg(0))
 
 	mgr := mustManager()
 
@@ -453,7 +481,7 @@ func lockCmd(args []string) {
 		os.Exit(1)
 	}
 
-	name := args[0]
+	name := mustValidContainerName(args[0])
 
 	mgr := mustManager()
 
@@ -473,7 +501,7 @@ func unlockCmd(args []string) {
 		os.Exit(1)
 	}
 
-	name := args[0]
+	name := mustValidContainerName(args[0])
 
 	mgr := mustManager()
 
@@ -498,7 +526,7 @@ func logsCmd(args []string) {
 		os.Exit(1)
 	}
 
-	name := fs.Arg(0)
+	name := mustValidContainerName(fs.Arg(0))
 
 	mgr := mustManager()
 
@@ -519,7 +547,7 @@ func deleteCmd(args []string) {
 		os.Exit(1)
 	}
 
-	name := fs.Arg(0)
+	name := mustValidContainerName(fs.Arg(0))
 
 	mgr := mustManager()
 
@@ -604,7 +632,7 @@ func statusCmd(args []string) {
 		os.Exit(1)
 	}
 
-	name := args[0]
+	name := mustValidContainerName(args[0])
 
 	mgr := mustManager()
 
@@ -640,7 +668,7 @@ func sshCmd(args []string) {
 		os.Exit(1)
 	}
 
-	name := args[0]
+	name := mustValidContainerName(args[0])
 
 	mgr := mustManager()
 
@@ -660,7 +688,7 @@ func shellCmd(args []string) {
 		os.Exit(1)
 	}
 
-	name := args[0]
+	name := mustValidContainerName(args[0])
 	remoteCmd := args[1:] // Extra args become remote command
 
 	mgr := mustManager()
@@ -699,7 +727,7 @@ func execCmd(args []string) {
 		os.Exit(1)
 	}
 
-	name := args[0]
+	name := mustValidContainerName(args[0])
 	command := args[1:]
 
 	mgr := mustManager()
@@ -1136,8 +1164,8 @@ func snapshotRestoreCmd(args []string) {
 		os.Exit(1)
 	}
 
-	container := args[0]
-	snapshotName := args[1]
+	container := mustValidContainerName(args[0])
+	snapshotName := mustValidSnapshotName(args[1])
 
 	mgr := mustManager()
 
@@ -1157,7 +1185,7 @@ func snapshotListCmd(args []string) {
 		os.Exit(1)
 	}
 
-	container := args[0]
+	container := mustValidContainerName(args[0])
 
 	mgr := mustManager()
 
@@ -1192,8 +1220,8 @@ func snapshotDeleteCmd(args []string) {
 		os.Exit(1)
 	}
 
-	container := args[0]
-	snapshotName := args[1]
+	container := mustValidContainerName(args[0])
+	snapshotName := mustValidSnapshotName(args[1])
 
 	mgr := mustManager()
 
@@ -1344,8 +1372,8 @@ func mountRemoveCmd(args []string) {
 		os.Exit(1)
 	}
 
-	container := args[0]
-	mountName := args[1]
+	container := mustValidContainerName(args[0])
+	mountName := mustValidMountName(args[1])
 
 	mgr := mustManager()
 
@@ -1363,7 +1391,7 @@ func mountListCmd(args []string) {
 
 	// If container specified, show just that one
 	if len(args) >= 1 {
-		container := args[0]
+		container := mustValidContainerName(args[0])
 		mounts, err := mgr.ListMounts(container)
 		if err != nil {
 			ui.Errorf("Error: %v", err)
@@ -1820,7 +1848,7 @@ func imagePublishCmd(args []string) {
 		os.Exit(1)
 	}
 
-	container := args[0]
+	container := mustValidContainerName(args[0])
 	snapshot := args[1]
 	alias := args[2]
 
@@ -1941,7 +1969,7 @@ func stateShowCmd(args []string) {
 		os.Exit(1)
 	}
 
-	container := args[0]
+	container := mustValidContainerName(args[0])
 
 	instanceDir := filepath.Join(appConfig.Dirs.Data, "instances")
 	tracker, err := state.NewTracker(instanceDir, container, "")

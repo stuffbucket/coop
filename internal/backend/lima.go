@@ -10,6 +10,7 @@ import (
 
 	"github.com/stuffbucket/coop/internal/config"
 	"github.com/stuffbucket/coop/internal/logging"
+	"github.com/stuffbucket/coop/internal/names"
 )
 
 // LimaBackend implements Backend using Lima directly.
@@ -31,10 +32,16 @@ func (l *LimaBackend) Available() bool {
 }
 
 func (l *LimaBackend) instanceName() string {
-	if l.cfg.Settings.VM.Instance != "" {
-		return l.cfg.Settings.VM.Instance
+	name := l.cfg.Settings.VM.Instance
+	if name == "" {
+		name = "incus"
 	}
-	return "incus"
+	// Validate to prevent path injection (defense in depth)
+	if err := names.ValidateInstanceName(name); err != nil {
+		// Fall back to safe default if config is invalid
+		return "incus"
+	}
+	return name
 }
 
 // limaInstance represents limactl list JSON output

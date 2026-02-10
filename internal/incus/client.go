@@ -77,9 +77,22 @@ func Connect() (*Client, error) {
 
 // ConnectWithConfig establishes a connection using the provided config.
 func ConnectWithConfig(cfg *config.Config) (*Client, error) {
-	platform := DetectPlatform()
-	if platform == PlatformUnknown {
+	plat := DetectPlatform()
+	if plat == PlatformUnknown {
 		return nil, fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+
+	// Try remote backend first if configured
+	if cfg.Settings.Remote.Name != "" || cfg.Settings.Remote.Address != "" {
+		conn, err := connectRemote(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return &Client{
+			conn:     conn,
+			platform: plat,
+			cfg:      cfg,
+		}, nil
 	}
 
 	var socketPath string
@@ -89,7 +102,7 @@ func ConnectWithConfig(cfg *config.Config) (*Client, error) {
 		// Explicit socket path from config
 		socketPath = cfg.Settings.IncusSocket
 	} else {
-		switch platform {
+		switch plat {
 		case PlatformMacOS:
 			// Use backend manager to get socket and ensure VM is running
 			vmMgr, err := backend.NewManager(cfg)
@@ -120,9 +133,59 @@ func ConnectWithConfig(cfg *config.Config) (*Client, error) {
 
 	return &Client{
 		conn:     conn,
-		platform: platform,
+		platform: plat,
 		cfg:      cfg,
 	}, nil
+}
+
+// connectRemote establishes an HTTPS connection to a remote Incus server.
+func connectRemote(cfg *config.Config) (incus.InstanceServer, error) {
+	remote := backend.NewRemoteBackend(cfg)
+
+	// Get server address
+	address, err := remote.GetIncusSocket()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get remote address: %w", err)
+	}
+
+	// Get TLS certificates
+	clientCert, clientKey, serverCert, err := remote.GetTLSCerts()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get TLS certs: %w", err)
+	}
+
+	// Read cert files
+	clientCertPEM, err := os.ReadFile(clientCert)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read client cert: %w", err)
+	}
+
+	clientKeyPEM, err := os.ReadFile(clientKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read client key: %w", err)
+	}
+
+	var serverCertPEM string
+	if serverCert != "" {
+		data, err := os.ReadFile(serverCert)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read server cert: %w", err)
+		}
+		serverCertPEM = string(data)
+	}
+
+	args := &incus.ConnectionArgs{
+		TLSClientCert: string(clientCertPEM),
+		TLSClientKey:  string(clientKeyPEM),
+		TLSServerCert: serverCertPEM,
+	}
+
+	conn, err := incus.ConnectIncus(address, args)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to remote incus at %s: %w", address, err)
+	}
+
+	return conn, nil
 }
 
 // CreateContainer creates a new container with the given configuration.

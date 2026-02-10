@@ -91,6 +91,9 @@ type Settings struct {
 	// Incus connection (auto-detected if empty)
 	IncusSocket string `json:"incus_socket,omitempty"`
 
+	// Remote Incus server configuration
+	Remote RemoteSettings `json:"remote,omitempty"`
+
 	// VM settings (Colima/Lima backend)
 	VM VMSettings `json:"vm,omitempty"`
 
@@ -105,6 +108,26 @@ type Settings struct {
 
 	// Deprecated: Use VM settings instead. Kept for backward compatibility.
 	Lima LimaSettings `json:"lima,omitempty"`
+}
+
+// RemoteSettings configures a remote Incus server connection.
+type RemoteSettings struct {
+	// Name is the remote server name (used for cert lookup in ~/.config/incus/servercerts/)
+	// If set, enables remote backend
+	Name string `json:"name,omitempty"`
+
+	// Address is the server address (e.g., "192.168.1.100:8443" or "incus.example.com:8443")
+	// If empty, derived from incus config.yml
+	Address string `json:"address,omitempty"`
+
+	// IncusConfigDir overrides the default ~/.config/incus for cert lookup
+	// Allows using LXD certs (~/.config/lxc) or custom paths
+	IncusConfigDir string `json:"incus_config_dir,omitempty"`
+
+	// Explicit cert paths (override auto-discovery from incus config)
+	ClientCert string `json:"client_cert,omitempty"` // Path to client.crt
+	ClientKey  string `json:"client_key,omitempty"`  // Path to client.key
+	ServerCert string `json:"server_cert,omitempty"` // Path to server.crt
 }
 
 // VMSettings configures the VM backend for running Incus.

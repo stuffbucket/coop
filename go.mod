@@ -1,6 +1,6 @@
 module github.com/stuffbucket/coop
 
-go 1.24.12
+go 1.25
 
 require (
 	github.com/charmbracelet/huh v0.8.0
@@ -8,11 +8,13 @@ require (
 	github.com/charmbracelet/log v0.4.2
 	github.com/cyphar/filepath-securejoin v0.6.1
 	github.com/gen2brain/beeep v0.11.2
+	github.com/go-git/go-git/v5 v5.16.4
 	github.com/lxc/incus/v6 v6.21.0
 	github.com/pquerna/otp v1.5.0
 	golang.org/x/crypto v0.47.0
 	golang.org/x/term v0.39.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
@@ -48,7 +50,6 @@ require (
 	github.com/esiqveland/notify v0.13.3 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.6.2 // indirect
-	github.com/go-git/go-git/v5 v5.16.4 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
@@ -112,5 +113,4 @@ require (
 	golang.org/x/text v0.33.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

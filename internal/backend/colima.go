@@ -12,6 +12,7 @@ import (
 
 	"github.com/stuffbucket/coop/internal/config"
 	"github.com/stuffbucket/coop/internal/logging"
+	"github.com/stuffbucket/coop/internal/names"
 )
 
 // ColimaBackend implements Backend using Colima.
@@ -33,10 +34,15 @@ func (c *ColimaBackend) Available() bool {
 }
 
 func (c *ColimaBackend) profileName() string {
-	if c.cfg.Settings.VM.Instance != "" {
-		return c.cfg.Settings.VM.Instance
+	name := c.cfg.Settings.VM.Instance
+	if name == "" {
+		name = "incus"
 	}
-	return "incus"
+	// Validate to prevent path injection (defense in depth)
+	if err := names.ValidateInstanceName(name); err != nil {
+		return "incus"
+	}
+	return name
 }
 
 // validateProfileName checks that a profile name is safe for use in file paths.
