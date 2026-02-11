@@ -29,6 +29,7 @@ type HelpState struct {
 	RunningCount  int    // number of running agents
 	StorageAvail  uint64 // available storage bytes
 	StorageTotal  uint64 // total storage bytes
+	BackendName   string // active backend (lima, colima, bladerunner)
 }
 
 // IsFresh returns true if coop appears to be in initial state.
@@ -515,9 +516,9 @@ func (p *HintProvider) Render(width int) string {
 
 // DashboardProvider shows mini system status.
 type DashboardProvider struct {
-	state          HelpState
-	version        string
-	latestVersion  string
+	state         HelpState
+	version       string
+	latestVersion string
 }
 
 func NewDashboardProvider(state HelpState, version, latestVersion string) *DashboardProvider {
@@ -585,14 +586,18 @@ func (p *DashboardProvider) Render(width int) string {
 
 	// VM (macOS)
 	if p.state.IsMacOS {
+		providerLabel := "VM"
+		if p.state.BackendName != "" {
+			providerLabel = p.state.BackendName
+		}
 		if p.state.VMRunning {
 			lines = append(lines, fmt.Sprintf("  %s %s",
 				okStyle.Render("●"),
-				"VM running"))
+				fmt.Sprintf("%s running", providerLabel)))
 		} else {
 			lines = append(lines, fmt.Sprintf("  %s %s",
 				warnStyle.Render("○"),
-				dimStyle.Render("VM stopped")))
+				dimStyle.Render(fmt.Sprintf("%s stopped", providerLabel))))
 		}
 	}
 

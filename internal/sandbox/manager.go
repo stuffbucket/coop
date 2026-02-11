@@ -149,12 +149,19 @@ func (m *Manager) Create(cfg ContainerConfig) error {
 	// NOTE: Environment variables can be passed via "environment.VAR_NAME" keys
 	// e.g., "environment.ANTHROPIC_API_KEY": cfg.AnthropicKey
 	containerConfig := map[string]string{
-		CoopManagedTag:       "true",
-		"user.user-data":    userData,
-		"limits.cpu":        fmt.Sprintf("%d", cfg.CPUs),
-		"limits.memory":     fmt.Sprintf("%dMiB", cfg.MemoryMB),
-		"limits.processes":  DefaultProcessLimit,
-		"raw.idmap":         fmt.Sprintf("both %d %d", os.Getuid(), AgentUID),
+		CoopManagedTag:     "true",
+		"user.user-data":   userData,
+		"limits.cpu":       fmt.Sprintf("%d", cfg.CPUs),
+		"limits.memory":    fmt.Sprintf("%dMiB", cfg.MemoryMB),
+		"limits.processes": DefaultProcessLimit,
+	}
+
+	// UID mapping: map host UID to agent UID inside the container.
+	// This only works when Incus runs on the same host (colima/lima with shared
+	// filesystem). For bladerunner, the container runs inside a VM where the
+	// macOS UID doesn't exist in /etc/subuid, so skip the mapping.
+	if m.client.BackendName() != "bladerunner" {
+		containerConfig["raw.idmap"] = fmt.Sprintf("both %d %d", os.Getuid(), AgentUID)
 	}
 
 	// Resolve image: prefer base image, fall back to remote if missing
@@ -256,7 +263,7 @@ func (m *Manager) handleMissingImage(requestedImage string) string {
 }
 
 // BuildBaseImage runs the build script to create the coop-agent-base image.
-// Returns an error if the script fails or cannot be found.
+// The incus CLI must be configured with the correct remote before calling this.
 func BuildBaseImage() error {
 	scriptLocations := []string{
 		"./scripts/build-base-image.sh",
@@ -673,7 +680,14 @@ func (m *Manager) SSHArgs(name string) ([]string, error) {
 		return nil, fmt.Errorf("could not get container IP: %w", err)
 	}
 
-	return sshkeys.SSHArgs("agent", ip), nil
+	args := sshkeys.SSHArgs("agent", ip)
+
+	// Prepend proxy args if the backend requires tunneling to reach container IPs
+	if proxyArgs := m.client.SSHProxyArgs(); len(proxyArgs) > 0 {
+		args = append(proxyArgs, args...)
+	}
+
+	return args, nil
 }
 
 // Exec runs a command in the container.
@@ -688,6 +702,35 @@ func (m *Manager) Exec(name string, command []string) (int, error) {
 	}
 
 	return m.client.ExecCommand(name, command)
+}
+
+// Shell opens an interactive shell in the container.
+// For backends without routable container IPs (e.g. bladerunner), this uses
+// the Incus exec API with a PTY. Returns the exit code.
+// If remoteCmd is non-empty, it is executed instead of an interactive shell.
+func (m *Manager) Shell(name string, remoteCmd []string) (int, error) {
+	container, err := m.client.GetContainer(name)
+	if err != nil {
+		return -1, fmt.Errorf("container %s not found", name)
+	}
+
+	if ContainerState(container.Status) != StateRunning {
+		return -1, fmt.Errorf("container %s is not running", name)
+	}
+
+	command := remoteCmd
+	if len(command) == 0 {
+		command = []string{"sudo", "-iu", "agent"}
+	}
+
+	return m.client.ExecInteractive(name, command)
+}
+
+// UseIncusExec returns true if the backend requires using Incus exec
+// instead of SSH for shell access (e.g. because container IPs are not
+// routable from the host).
+func (m *Manager) UseIncusExec() bool {
+	return m.client.BackendName() == "bladerunner"
 }
 
 // EnsureSSHKeys ensures coop SSH keys exist and returns the public key.

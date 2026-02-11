@@ -241,7 +241,7 @@ func Load() (*Config, error) {
 			FallbackImage:       "",
 			FallbackFingerprint: "",
 			VM: VMSettings{
-				BackendPriority: []string{"colima", "lima"},
+				BackendPriority: []string{"bladerunner", "colima", "lima"},
 				Instance:        "incus",
 				CPUs:            4,
 				MemoryGB:        8,
@@ -290,7 +290,7 @@ func Load() (*Config, error) {
 		cfg.Settings.VM.Instance = "incus"
 	}
 	if len(cfg.Settings.VM.BackendPriority) == 0 {
-		cfg.Settings.VM.BackendPriority = []string{"colima", "lima"}
+		cfg.Settings.VM.BackendPriority = []string{"bladerunner", "colima", "lima"}
 	}
 	if cfg.Settings.VM.CPUs == 0 {
 		cfg.Settings.VM.CPUs = 4

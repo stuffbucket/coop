@@ -66,7 +66,7 @@ class Coop < Formula
   version "${VERSION}"
   license "MIT"
 
-  depends_on "colima"
+  depends_on "stuffbucket/homebrew-tap/bladerunner"
 
   on_macos do
     on_arm do

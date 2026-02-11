@@ -2,6 +2,7 @@
 package doctor
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 	"os"
@@ -109,6 +110,7 @@ func Run(cfg *config.Config) *Report {
 func selectVMBackend(cfg *config.Config) VMBackendChecker {
 	// Try backends in priority order
 	backends := []VMBackendChecker{
+		&BladerunnerChecker{},
 		&ColimaChecker{},
 		&LimaChecker{},
 	}
@@ -161,6 +163,93 @@ func (r *Report) HasFailures() bool {
 }
 
 // --- VM Backend Checkers ---
+
+// BladerunnerChecker provides health checks for the bladerunner VM backend.
+type BladerunnerChecker struct{}
+
+func (b *BladerunnerChecker) Name() string { return "bladerunner" }
+
+func (b *BladerunnerChecker) Available() bool {
+	_, err := exec.LookPath("br")
+	return err == nil
+}
+
+func (b *BladerunnerChecker) Checks(cfg *config.Config) []CheckResult {
+	var results []CheckResult
+
+	// Check bladerunner installation
+	installResult := CheckResult{Name: "Bladerunner installed"}
+	if !b.Available() {
+		installResult.Status = StatusFail
+		installResult.Message = "br not found in PATH"
+		installResult.Fix = "brew install stuffbucket/tap/bladerunner"
+		results = append(results, installResult)
+		return results
+	}
+	installResult.Status = StatusPass
+	installResult.Message = "br available"
+	results = append(results, installResult)
+
+	// Check bladerunner VM running via control socket
+	runningResult := CheckResult{Name: "Bladerunner VM running"}
+	socketPath := b.controlSocketPath()
+
+	conn, err := net.DialTimeout("unix", socketPath, 2*time.Second)
+	if err != nil {
+		runningResult.Status = StatusFail
+		runningResult.Message = "VM not running (control socket unavailable)"
+		runningResult.Fix = "br start"
+		results = append(results, runningResult)
+		return results
+	}
+
+	// Send status command
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+	_, _ = fmt.Fprintf(conn, "v1 status\n")
+	scanner := bufio.NewScanner(conn)
+	if scanner.Scan() {
+		resp := scanner.Text()
+		if strings.Contains(resp, "running") {
+			runningResult.Status = StatusPass
+			runningResult.Message = "VM is running"
+		} else {
+			runningResult.Status = StatusFail
+			runningResult.Message = fmt.Sprintf("VM status: %s", resp)
+			runningResult.Fix = "br start"
+		}
+	} else {
+		runningResult.Status = StatusWarn
+		runningResult.Message = "could not read status response"
+	}
+	_ = conn.Close()
+	results = append(results, runningResult)
+
+	return results
+}
+
+func (b *BladerunnerChecker) GetIncusSocketPath(cfg *config.Config) string {
+	if cfg.Settings.IncusSocket != "" {
+		return cfg.Settings.IncusSocket
+	}
+	// Bladerunner forwards Incus API to localhost:18443 via virtio-vsock
+	return "https://127.0.0.1:18443"
+}
+
+func (b *BladerunnerChecker) GetContainerSubnets(cfg *config.Config) []string {
+	return []string{
+		"10.166.11.0/24", // Default Incus subnet
+		"192.100.0.0/24", // README documented
+	}
+}
+
+// controlSocketPath returns the path to the bladerunner control socket.
+func (b *BladerunnerChecker) controlSocketPath() string {
+	if xdg := os.Getenv("XDG_STATE_HOME"); xdg != "" {
+		return filepath.Join(xdg, "bladerunner", "control.sock")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".local", "state", "bladerunner", "control.sock")
+}
 
 // ColimaChecker provides health checks for the Colima VM backend.
 type ColimaChecker struct{}
@@ -274,8 +363,8 @@ func (c *ColimaChecker) GetIncusSocketPath(cfg *config.Config) string {
 
 func (c *ColimaChecker) GetContainerSubnets(cfg *config.Config) []string {
 	return []string{
-		"10.166.11.0/24",  // Colima default
-		"192.100.0.0/24",  // README documented
+		"10.166.11.0/24", // Colima default
+		"192.100.0.0/24", // README documented
 	}
 }
 
@@ -354,8 +443,8 @@ func (l *LimaChecker) GetIncusSocketPath(cfg *config.Config) string {
 
 func (l *LimaChecker) GetContainerSubnets(cfg *config.Config) []string {
 	return []string{
-		"10.0.100.0/24",   // Lima template default
-		"192.100.0.0/24",  // README documented
+		"10.0.100.0/24",  // Lima template default
+		"192.100.0.0/24", // README documented
 	}
 }
 
