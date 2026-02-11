@@ -93,6 +93,11 @@ func (r *RemoteBackend) GetTLSCerts() (clientCert, clientKey, serverCert string,
 	return r.resolveCerts()
 }
 
+// SSHProxyArgs returns nil — remote backends handle SSH routing externally.
+func (r *RemoteBackend) SSHProxyArgs() []string {
+	return nil
+}
+
 // resolveAddress determines the server address from config.
 func (r *RemoteBackend) resolveAddress() (string, error) {
 	remote := r.cfg.Settings.Remote

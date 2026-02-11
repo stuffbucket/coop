@@ -20,7 +20,7 @@ var (
 	ErrVMNotRunning = errors.New("platform for agent containers is not running")
 
 	// ErrNoBackendAvailable indicates no VM backend could be found or used.
-	ErrNoBackendAvailable = errors.New("no platform backend available (install colima or lima)")
+	ErrNoBackendAvailable = errors.New("no platform backend available (install bladerunner, colima, or lima)")
 
 	// ErrAutoStartDisabled indicates the VM is stopped and auto_start is disabled.
 	ErrAutoStartDisabled = errors.New("platform for agent containers is not running - start it with: coop vm start")
@@ -79,8 +79,18 @@ type Backend interface {
 	// Exec runs a command in the VM and returns output.
 	Exec(command []string) ([]byte, error)
 
-	// GetIncusSocket returns the Incus socket path.
+	// GetIncusSocket returns the Incus socket path or HTTPS URL.
 	GetIncusSocket() (string, error)
+
+	// GetTLSCerts returns paths to client cert, client key, and server cert
+	// for Incus TLS auth. Backends that use Unix sockets return empty strings.
+	GetTLSCerts() (clientCert, clientKey, serverCert string, err error)
+
+	// SSHProxyArgs returns extra SSH arguments needed to reach container IPs
+	// from the host. Backends where container IPs are directly routable return nil.
+	// For backends like bladerunner where container IPs are inside a VM,
+	// this returns ProxyJump/config args to tunnel through the VM.
+	SSHProxyArgs() []string
 }
 
 // Status holds VM status information.
@@ -120,6 +130,8 @@ func NewManager(cfg *config.Config) (*Manager, error) {
 	m.backends = append(m.backends, NewRemoteBackend(cfg))
 
 	if platform.IsMacOS() {
+		// Bladerunner uses Apple Virtualization.framework (macOS only)
+		m.backends = append(m.backends, NewBladerunnerBackend(cfg))
 		m.backends = append(m.backends, NewColimaBackend(cfg))
 	}
 	// Lima works on macOS and Linux (including WSL2)
@@ -156,7 +168,7 @@ func (m *Manager) selectBackend() (Backend, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("%w (tried: remote, colima, lima)", ErrNoBackendAvailable)
+	return nil, fmt.Errorf("%w (tried: remote, bladerunner, colima, lima)", ErrNoBackendAvailable)
 }
 
 // Backend returns the selected backend.
@@ -194,9 +206,19 @@ func (m *Manager) Exec(command []string) ([]byte, error) {
 	return m.backend.Exec(command)
 }
 
-// GetIncusSocket returns the Incus socket path.
+// GetIncusSocket returns the Incus socket path or HTTPS URL.
 func (m *Manager) GetIncusSocket() (string, error) {
 	return m.backend.GetIncusSocket()
+}
+
+// GetTLSCerts returns paths to TLS client cert, key, and server cert.
+func (m *Manager) GetTLSCerts() (clientCert, clientKey, serverCert string, err error) {
+	return m.backend.GetTLSCerts()
+}
+
+// SSHProxyArgs returns extra SSH arguments for reaching container IPs.
+func (m *Manager) SSHProxyArgs() []string {
+	return m.backend.SSHProxyArgs()
 }
 
 // EnsureRunning ensures the VM is running.
@@ -214,6 +236,7 @@ func (m *Manager) EnsureRunningWithPrompt(interactive bool) error {
 	}
 
 	if status.State == StateRunning {
+		m.ensureIncusRemote()
 		return nil
 	}
 
@@ -258,7 +281,21 @@ func (m *Manager) EnsureRunningWithPrompt(interactive bool) error {
 		}
 	}
 
-	return m.Start()
+	if err := m.Start(); err != nil {
+		return err
+	}
+	m.ensureIncusRemote()
+	return nil
+}
+
+// ensureIncusRemote configures the incus CLI remote if the backend supports it.
+func (m *Manager) ensureIncusRemote() {
+	if br, ok := m.backend.(*BladerunnerBackend); ok {
+		if err := br.EnsureIncusRemote(); err != nil {
+			log := logging.Get()
+			log.Debug("failed to configure incus remote", "error", err)
+		}
+	}
 }
 
 // ListAvailableBackends returns names of available backends.

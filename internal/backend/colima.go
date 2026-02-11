@@ -279,6 +279,15 @@ func (c *ColimaBackend) Exec(command []string) ([]byte, error) {
 	return runOutputCmd("colima", args, fmt.Sprintf("failed to exec in colima VM %q", profile))
 }
 
+// GetTLSCerts is not needed for Colima (uses Unix socket).
+func (c *ColimaBackend) GetTLSCerts() (clientCert, clientKey, serverCert string, err error) {
+	return "", "", "", nil
+}
+
+func (c *ColimaBackend) SSHProxyArgs() []string {
+	return nil
+}
+
 func (c *ColimaBackend) GetIncusSocket() (string, error) {
 	// Check explicit config first
 	if c.cfg.Settings.IncusSocket != "" {

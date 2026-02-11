@@ -190,6 +190,15 @@ func (l *LimaBackend) Exec(command []string) ([]byte, error) {
 	return runOutputCmd("limactl", args, fmt.Sprintf("failed to exec in lima VM %q", name))
 }
 
+// GetTLSCerts is not needed for Lima (uses Unix socket).
+func (l *LimaBackend) GetTLSCerts() (clientCert, clientKey, serverCert string, err error) {
+	return "", "", "", nil
+}
+
+func (l *LimaBackend) SSHProxyArgs() []string {
+	return nil
+}
+
 func (l *LimaBackend) GetIncusSocket() (string, error) {
 	// Check explicit config first
 	if l.cfg.Settings.IncusSocket != "" {

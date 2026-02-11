@@ -5,12 +5,18 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"os/signal"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/gorilla/websocket"
 	incus "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/shared/api"
+	"golang.org/x/sys/unix"
+	"golang.org/x/term"
+
 	"github.com/stuffbucket/coop/internal/backend"
 	"github.com/stuffbucket/coop/internal/config"
 	"github.com/stuffbucket/coop/internal/platform"
@@ -59,9 +65,22 @@ func DetectPlatform() Platform {
 
 // Client wraps the Incus API client with convenience methods.
 type Client struct {
-	conn     incus.InstanceServer
-	platform Platform
-	cfg      *config.Config
+	conn         incus.InstanceServer
+	platform     Platform
+	cfg          *config.Config
+	backendName  string
+	sshProxyArgs []string
+}
+
+// BackendName returns the name of the backend this client is connected through.
+func (c *Client) BackendName() string {
+	return c.backendName
+}
+
+// SSHProxyArgs returns extra SSH arguments needed to reach container IPs.
+// Returns nil when container IPs are directly routable from the host.
+func (c *Client) SSHProxyArgs() []string {
+	return c.sshProxyArgs
 }
 
 // Connect establishes a connection to the Incus daemon.
@@ -89,13 +108,16 @@ func ConnectWithConfig(cfg *config.Config) (*Client, error) {
 			return nil, err
 		}
 		return &Client{
-			conn:     conn,
-			platform: plat,
-			cfg:      cfg,
+			conn:        conn,
+			platform:    plat,
+			cfg:         cfg,
+			backendName: "remote",
 		}, nil
 	}
 
 	var socketPath string
+	var detectedBackend string
+	var sshProxyArgs []string
 
 	// Determine socket path based on platform and config
 	if cfg.Settings.IncusSocket != "" {
@@ -109,14 +131,27 @@ func ConnectWithConfig(cfg *config.Config) (*Client, error) {
 			if err != nil {
 				return nil, fmt.Errorf("vm setup failed: %w", err)
 			}
+			detectedBackend = vmMgr.Backend().Name()
 			// Always prompt interactively - let EnsureRunningWithPrompt handle terminal detection
 			if err := vmMgr.EnsureRunningWithPrompt(true); err != nil {
 				return nil, fmt.Errorf("vm start failed: %w", err)
 			}
+			// Query proxy args after ensuring VM is running (needs control socket)
+			sshProxyArgs = vmMgr.SSHProxyArgs()
 			socket, err := vmMgr.GetIncusSocket()
 			if err != nil {
 				return nil, fmt.Errorf("failed to get incus socket: %w", err)
 			}
+
+			// HTTPS endpoints (e.g. bladerunner vsock forwarding) need TLS
+			if strings.HasPrefix(socket, "https://") {
+				conn, err := connectTLS(socket, vmMgr)
+				if err != nil {
+					return nil, err
+				}
+				return &Client{conn: conn, platform: plat, cfg: cfg, backendName: detectedBackend, sshProxyArgs: sshProxyArgs}, nil
+			}
+
 			socketPath = socket
 		case PlatformLinux, PlatformWSL2:
 			socketPath = "unix:///var/lib/incus/unix.socket"
@@ -132,9 +167,11 @@ func ConnectWithConfig(cfg *config.Config) (*Client, error) {
 	}
 
 	return &Client{
-		conn:     conn,
-		platform: plat,
-		cfg:      cfg,
+		conn:         conn,
+		platform:     plat,
+		cfg:          cfg,
+		backendName:  detectedBackend,
+		sshProxyArgs: sshProxyArgs,
 	}, nil
 }
 
@@ -154,20 +191,34 @@ func connectRemote(cfg *config.Config) (incus.InstanceServer, error) {
 		return nil, fmt.Errorf("failed to get TLS certs: %w", err)
 	}
 
-	// Read cert files
-	clientCertPEM, err := os.ReadFile(clientCert)
+	return connectHTTPS(address, clientCert, clientKey, serverCert)
+}
+
+// connectTLS establishes an HTTPS connection using the backend manager's TLS certs.
+func connectTLS(address string, mgr *backend.Manager) (incus.InstanceServer, error) {
+	clientCert, clientKey, serverCert, err := mgr.GetTLSCerts()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get TLS certs: %w", err)
+	}
+
+	return connectHTTPS(address, clientCert, clientKey, serverCert)
+}
+
+// connectHTTPS connects to an Incus HTTPS endpoint with TLS client authentication.
+func connectHTTPS(address, clientCertPath, clientKeyPath, serverCertPath string) (incus.InstanceServer, error) {
+	clientCertPEM, err := os.ReadFile(clientCertPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read client cert: %w", err)
 	}
 
-	clientKeyPEM, err := os.ReadFile(clientKey)
+	clientKeyPEM, err := os.ReadFile(clientKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read client key: %w", err)
 	}
 
 	var serverCertPEM string
-	if serverCert != "" {
-		data, err := os.ReadFile(serverCert)
+	if serverCertPath != "" {
+		data, err := os.ReadFile(serverCertPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read server cert: %w", err)
 		}
@@ -175,14 +226,15 @@ func connectRemote(cfg *config.Config) (incus.InstanceServer, error) {
 	}
 
 	args := &incus.ConnectionArgs{
-		TLSClientCert: string(clientCertPEM),
-		TLSClientKey:  string(clientKeyPEM),
-		TLSServerCert: serverCertPEM,
+		TLSClientCert:      string(clientCertPEM),
+		TLSClientKey:       string(clientKeyPEM),
+		TLSServerCert:      serverCertPEM,
+		InsecureSkipVerify: serverCertPEM == "",
 	}
 
 	conn, err := incus.ConnectIncus(address, args)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to remote incus at %s: %w", address, err)
+		return nil, fmt.Errorf("failed to connect to incus at %s: %w", address, err)
 	}
 
 	return conn, nil
@@ -391,6 +443,104 @@ func (c *Client) ExecCommandWithOutput(name string, command []string) (string, e
 	}
 
 	return stdout.String(), nil
+}
+
+// ExecInteractive runs an interactive shell session inside the container using
+// the Incus API with a PTY. This is used when SSH is not available (e.g.
+// bladerunner backend where container IPs are not routable from the host).
+// If command is nil, defaults to ["bash"].
+func (c *Client) ExecInteractive(name string, command []string) (int, error) {
+	if len(command) == 0 {
+		command = []string{"bash"}
+	}
+
+	// Get current terminal dimensions.
+	stdinFd := int(os.Stdin.Fd())
+	width, height, err := term.GetSize(stdinFd)
+	if err != nil {
+		// Fall back to reasonable defaults if we can't get terminal size.
+		width, height = 80, 24
+	}
+
+	req := api.InstanceExecPost{
+		Command:     command,
+		WaitForWS:   true,
+		Interactive: true,
+		Width:       width,
+		Height:      height,
+		User:        1000, // agent user
+		Cwd:         "/home/agent",
+		Environment: map[string]string{
+			"TERM": os.Getenv("TERM"),
+			"HOME": "/home/agent",
+			"USER": "agent",
+		},
+	}
+
+	if req.Environment["TERM"] == "" {
+		req.Environment["TERM"] = "xterm-256color"
+	}
+
+	// Put terminal in raw mode for interactive use.
+	oldState, err := term.MakeRaw(stdinFd)
+	if err != nil {
+		return -1, fmt.Errorf("failed to set terminal to raw mode: %w", err)
+	}
+	defer func() { _ = term.Restore(stdinFd, oldState) }()
+
+	// Control handler for window resize and signal forwarding.
+	controlHandler := func(control *websocket.Conn) {
+		ch := make(chan os.Signal, 10)
+		signal.Notify(ch, unix.SIGWINCH)
+		defer signal.Stop(ch)
+
+		for sig := range ch {
+			if sig == unix.SIGWINCH {
+				w, h, err := term.GetSize(stdinFd)
+				if err != nil {
+					continue
+				}
+				msg := api.InstanceExecControl{
+					Command: "window-resize",
+					Args: map[string]string{
+						"width":  strconv.Itoa(w),
+						"height": strconv.Itoa(h),
+					},
+				}
+				if err := control.WriteJSON(msg); err != nil {
+					return
+				}
+			}
+		}
+	}
+
+	dataDone := make(chan bool)
+	args := incus.InstanceExecArgs{
+		Stdin:    os.Stdin,
+		Stdout:   os.Stdout,
+		Stderr:   os.Stderr,
+		Control:  controlHandler,
+		DataDone: dataDone,
+	}
+
+	op, err := c.conn.ExecInstance(name, req, &args)
+	if err != nil {
+		return -1, err
+	}
+
+	// Wait for data channels to finish.
+	<-dataDone
+
+	if err := op.Wait(); err != nil {
+		return -1, err
+	}
+
+	opAPI := op.Get()
+	returnVal, ok := opAPI.Metadata["return"].(float64)
+	if !ok {
+		return -1, fmt.Errorf("unexpected return type in exec metadata")
+	}
+	return int(returnVal), nil
 }
 
 // GetContainerIP returns the IPv4 address of the container.
